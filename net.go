@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"math"
 	"net/http"
@@ -14,6 +15,8 @@ type Latency struct {
 }
 
 func req_and_choose_good_and_get_latency(ips []IP) []Latency {
+	// 监控器ctx用来通知协程停止请求，优选数量已达标
+	ctx, cancel := context.WithCancel(context.Background())
 	num := 10               // 优选ip数量
 	var latencies []Latency // ip与延迟数组
 	var n = 16              // 并发数
@@ -34,9 +37,15 @@ func req_and_choose_good_and_get_latency(ips []IP) []Latency {
 			defer wg.Done()
 			for _, ip := range ips {
 				latency := request(ip, client)
-				if latency != -1 {
-					results <- Latency{IP: ip, Latency: latency}
+				if latency < 0 {
+					continue
 				}
+				select {
+				case <-ctx.Done():
+					return
+				case results <- Latency{IP: ip, Latency: latency}:
+				}
+
 			}
 		}(ips[start:end])
 	}
@@ -50,6 +59,7 @@ func req_and_choose_good_and_get_latency(ips []IP) []Latency {
 		latencies = append(latencies, Latency{IP: r.IP, Latency: r.Latency})
 		if len(latencies) >= num {
 			// 不只要break，还要通知
+			cancel()
 			break
 		}
 	}
