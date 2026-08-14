@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"fmt"
@@ -13,8 +13,14 @@ type IP struct {
 	IP     string
 	isCIDR bool
 }
+type IPParser struct {
+}
 
-func parseIP(ips string) ([]IP, error) {
+func NewIPParser() *IPParser {
+	return &IPParser{}
+}
+
+func (p *IPParser) ParseIP(ips string) ([]IP, error) {
 	var IPs []IP
 
 	//  1.1.1.1

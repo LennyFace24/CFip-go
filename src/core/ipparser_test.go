@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"net/netip"
@@ -8,7 +8,8 @@ import (
 
 // 1. 单 IP 解析: 分类正确, isCIDR=false
 func TestParseSingleIP(t *testing.T) {
-	ips, err := parseIP("1.1.1.1")
+	parser := NewIPParser()
+	ips, err := parser.ParseIP("1.1.1.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +27,8 @@ func TestParseSingleIP(t *testing.T) {
 // 2. 注释/空行/非法行应被跳过
 func TestParseSkipInvalid(t *testing.T) {
 	input := "1.1.1.1\n\n# 注释\n// 注释\nnot-an-ip\n8.8.8.8\n"
-	ips, err := parseIP(input)
+	parser := NewIPParser()
+	ips, err := parser.ParseIP(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,8 @@ func TestParseSkipInvalid(t *testing.T) {
 
 // 3. 带采样数的 CIDR: 精确生成 N 个, 且都在段内
 func TestParseCIDRWithSampleCount(t *testing.T) {
-	ips, err := parseIP("104.16.0.0/13=50")
+	parser := NewIPParser()
+	ips, err := parser.ParseIP("104.16.0.0/13=50")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +62,8 @@ func TestParseCIDRWithSampleCount(t *testing.T) {
 
 // 4. 纯 CIDR(无 =): 默认采样 5 个, 且都在段内
 func TestParseCIDRAutoSample(t *testing.T) {
-	ips, err := parseIP("1.1.1.0/24")
+	parser := NewIPParser()
+	ips, err := parser.ParseIP("1.1.1.0/24")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +83,8 @@ func TestParseCIDRAutoSample(t *testing.T) {
 // 5. 混合输入: 单IP + 带采样CIDR 同时解析
 func TestParseMixed(t *testing.T) {
 	input := "1.1.1.1\n104.16.0.0/13=10\n"
-	ips, err := parseIP(input)
+	parser := NewIPParser()
+	ips, err := parser.ParseIP(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,8 +140,9 @@ func TestGetSampleCountAndCidr(t *testing.T) {
 
 // 9. 采样数超过段大小: 应截断, 不 panic, 不超过段大小
 func TestSampleCountExceedsRange(t *testing.T) {
+	parser := NewIPParser()
 	// /30 段只有 4 个 IP, 请求 100 个 → 应截断到 4
-	ips, err := parseIP("1.1.1.0/30=100")
+	ips, err := parser.ParseIP("1.1.1.0/30=100")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +164,8 @@ func TestSampleCountExact(t *testing.T) {
 		{"104.16.0.0/13=1", 1},
 		{"104.16.0.0/24=3", 3},
 	} {
-		ips, err := parseIP(tc.cidr)
+		parser := NewIPParser()
+		ips, err := parser.ParseIP(tc.cidr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,7 +177,8 @@ func TestSampleCountExact(t *testing.T) {
 
 // 11. 采样 IP 的 isCIDR 标记: 带 = 的 CIDR 生成的 IP 都标记 isCIDR
 func TestSampledIPsMarkedCIDR(t *testing.T) {
-	ips, err := parseIP("1.1.1.0/24=5")
+	parser := NewIPParser()
+	ips, err := parser.ParseIP("1.1.1.0/24=5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +195,6 @@ func parseIPFile(path string) ([]IP, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseIP(string(data))
+	parser := NewIPParser()
+	return parser.ParseIP(string(data))
 }

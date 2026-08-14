@@ -1,12 +1,15 @@
-package main
+package core
 
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"math"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/LennyFace24/CFip-go/src/config"
 )
 
 type Latency struct {
@@ -14,12 +17,18 @@ type Latency struct {
 	Latency float64
 }
 
-func req_and_choose_good_and_get_latency(ips []IP) []Latency {
+func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
+
 	// 监控器ctx用来通知协程停止请求，优选数量已达标
 	ctx, cancel := context.WithCancel(context.Background())
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fmt.Println("加载配置文件出错:", err)
+		panic(err)
+	}
 	num := 10               // 优选ip数量
 	var latencies []Latency // ip与延迟数组
-	var n = 16              // 并发数
+	var n = cfg.Concurrency // 并发数
 
 	results := make(chan Latency, 10) // 控制并发数的通道
 
@@ -84,12 +93,16 @@ func request(ip IP, client *http.Client) float64 {
 }
 
 func newClient() *http.Client {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		panic(err)
+	}
 	transport := &http.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, // 跳过证书校验
 		DisableKeepAlives: true,                                  // 不池化, 用完断开
 	}
 	return &http.Client{
-		Timeout:   500 * time.Millisecond, // 设置超时时间
+		Timeout:   time.Duration(cfg.Timeout) * time.Millisecond, // 设置超时时间
 		Transport: transport,
 	}
 }

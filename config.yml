@@ -1,0 +1,6 @@
+# 允许最大延迟
+latency: 500
+# 并发数
+concurrency: 16
+# 请求超时时间 单位ms
+timeout: 500

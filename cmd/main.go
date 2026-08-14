@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/LennyFace24/CFip-go/src/core"
 	"os"
 	"sort"
 )
@@ -11,13 +12,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	ips, err := parseIP(string(file))
+	parser := core.NewIPParser() // 初始化IP解析器
+	ips, err := parser.ParseIP(string(file))
 	if err != nil {
 		panic(err)
 	}
 
 	// 请求每个ip获取延迟
-	lates := req_and_choose_good_and_get_latency(ips)
+	lates := core.RequestAndChooseGoodAndGetLatency(ips)
 	sort.Slice(lates, func(i, j int) bool {
 		return lates[i].Latency < lates[j].Latency
 	})
