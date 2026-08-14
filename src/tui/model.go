@@ -3,10 +3,11 @@ package tui
 import (
 	"context"
 
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/LennyFace24/CFip-go/src/config"
 	"github.com/LennyFace24/CFip-go/src/core"
+	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // latencyMsg 单条测速结果到达
@@ -22,6 +23,7 @@ type Model struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	ch     <-chan core.StreamResult
+	probe  core.ProbeLatency
 
 	rows    []core.StreamResult // 全部已到达结果（原始顺序）
 	total   int                 // 总待测数
@@ -30,19 +32,21 @@ type Model struct {
 	started bool
 	done    bool
 
-	sort  SortMode
-	query string
+	sort      SortMode
+	query     string
+	filtering bool
+	input     textinput.Model
 
 	table table.Model
 }
 
-// New 创建 TUI 模型
 func New(cfg *config.Config, ips []core.IP) *Model {
 	return &Model{
 		cfg:   cfg,
 		ips:   ips,
 		total: len(ips),
 		sort:  SortLatency,
+		input: newInput(),
 		table: newTable(),
 	}
 }
@@ -50,7 +54,7 @@ func New(cfg *config.Config, ips []core.IP) *Model {
 // Init 启动测速流并返回首个订阅命令
 func (m *Model) Init() tea.Cmd {
 	m.ctx, m.cancel = context.WithCancel(context.Background())
-	m.ch = core.StreamLatency(m.ctx, m.ips, m.cfg.Concurrency, nil)
+	m.ch = core.StreamLatency(m.ctx, m.ips, m.cfg.Concurrency, m.probe)
 	m.started = true
 	return subscribe(m.ch)
 }
@@ -70,12 +74,43 @@ func subscribe(ch <-chan core.StreamResult) tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// 筛选输入框激活时，优先交给输入框
+		if m.filtering {
+			switch msg.String() {
+			case "enter":
+				m.query = m.input.Value()
+				m.filtering = false
+				m.setResults()
+				return m, nil
+			case "esc", "ctrl+c":
+				m.filtering = false
+				m.input.SetValue("")
+				m.query = ""
+				m.setResults()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			m.query = m.input.Value() // 实时过滤
+			m.setResults()
+			return m, cmd
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if m.cancel != nil {
 				m.cancel()
 			}
 			return m, tea.Quit
+		case "s":
+			m.sort = (m.sort + 1) % 3 // SortLatency→SortIP→SortStatus 循环
+			m.setResults()
+			return m, nil
+		case "/":
+			m.filtering = true
+			m.input.Focus()
+			return m, nil
+		case "r":
+			return m, m.restart()
 		}
 		var cmd tea.Cmd
 		m.table, cmd = m.table.Update(msg)
@@ -112,7 +147,26 @@ func (m *Model) setResults() {
 	m.table.SetRows(rows)
 }
 
+// restart 重置结果并重启测速流
+func (m *Model) restart() tea.Cmd {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.ch = core.StreamLatency(m.ctx, m.ips, m.cfg.Concurrency, m.probe)
+	m.rows = nil
+	m.ok, m.fail = 0, 0
+	m.done = false
+	m.started = true
+	m.setResults()
+	return subscribe(m.ch)
+}
+
 // View 渲染整个界面
 func (m *Model) View() string {
-	return m.statusLine() + "\n" + baseStyle.Render(m.table.View()) + "\n" + helpLine()
+	var inputLineStr string
+	if m.filtering {
+		inputLineStr = inputLine(m.input) + "\n"
+	}
+	return m.statusLine() + "\n" + inputLineStr + baseStyle.Render(m.table.View()) + "\n" + helpLine()
 }
