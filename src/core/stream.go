@@ -40,6 +40,9 @@ func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLa
 		go func(ips []IP) {
 			defer wg.Done()
 			for _, ip := range ips {
+				if ctx.Err() != nil {
+					return // 已取消，不再发起新探测
+				}
 				source := "单IP"
 				if ip.isCIDR {
 					source = "网段采样"

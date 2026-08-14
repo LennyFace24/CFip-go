@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/LennyFace24/CFip-go/src/config"
@@ -27,7 +26,6 @@ func main() {
 		fmt.Println("解析 IP 出错:", err)
 		os.Exit(1)
 	}
-	_ = time.Second // 占位，Task 4 移除
 
 	m := tui.New(cfg, ips)
 	p := tea.NewProgram(m, tea.WithAltScreen())
