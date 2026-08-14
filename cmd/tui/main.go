@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/LennyFace24/CFip-go/src/config"
 	"github.com/LennyFace24/CFip-go/src/core"
 	"github.com/LennyFace24/CFip-go/src/tui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {

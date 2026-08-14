@@ -3,9 +3,9 @@ package tui
 import (
 	"fmt"
 
+	"github.com/LennyFace24/CFip-go/src/core"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/LennyFace24/CFip-go/src/core"
 )
 
 var baseStyle = lipgloss.NewStyle().
