@@ -26,3 +26,7 @@ go run ./cmd/tui
 ```
 
 按键：`↑/↓` 导航，`s` 切换排序（延迟/IP/状态），`/` 筛选 IP 子串，`r` 重新测速，`q` 退出。
+
+## 效果图
+
+[![TUI 效果图](png/image.png)](png/image.png)
