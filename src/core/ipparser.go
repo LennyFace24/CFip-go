@@ -61,9 +61,9 @@ func parseCIDR(cidr string) []IP {
 	} else {
 		prefix, _ = netip.ParsePrefix(cidr)
 	}
-
-	if hasSampleCount(cidr) {
-		prefix, sample_count = get_sample_count_and_cidr(cidr)
+	if sample_count <= 0 {
+		fmt.Println("采样数不能小于等于0！，具体字符串为： ", cidr)
+		return []IP{}
 	}
 	// 返回采样ip数组
 	return return_sampled_ips(sample_count, prefix, prefix.Bits())
@@ -71,8 +71,12 @@ func parseCIDR(cidr string) []IP {
 
 // 限制ip采样数量后的算法
 func return_sampled_ips(sample_count int, prefix netip.Prefix, bits int) []IP {
+
 	var IPs []IP
 
+	if sample_count <= 0 {
+		return IPs
+	}
 	// 获取网段开始ip
 	// [104, 10, 0, 0]
 	a := prefix.Masked().Addr().As4()
@@ -80,7 +84,7 @@ func return_sampled_ips(sample_count int, prefix netip.Prefix, bits int) []IP {
 	// 采样数大于等于5个时，先把最后五个排除
 	random_range := 1 << (32 - bits)
 	for range sample_count {
-		ip := rand.Intn(random_range + 1) // 生成随机数
+		ip := rand.Intn(random_range) // 生成随机数
 		// 将随机数转换为IP地址
 		// 右移8位，获得被修改的数字
 		b3 := int(a[3]) | (ip & 0xFF)

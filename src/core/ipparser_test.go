@@ -104,7 +104,7 @@ func TestParseMixed(t *testing.T) {
 
 // 6. 解析 ip.txt 文件(集成): 至少能解析出 IP
 func TestParseIPFile(t *testing.T) {
-	ips, err := parseIPFile("ip.txt")
+	ips, err := parseIPFile("../../ip.txt")
 	if err != nil {
 		t.Fatal(err)
 	}

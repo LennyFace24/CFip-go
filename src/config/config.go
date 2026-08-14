@@ -14,6 +14,7 @@ type Config struct {
 	Latency     int `yaml:"latency"`
 	Concurrency int `yaml:"concurrency"`
 	Timeout     int `yaml:"timeout"`
+	Number      int `yaml:"number"`
 }
 
 func LoadConfig() (*Config, error) {

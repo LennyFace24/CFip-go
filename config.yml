@@ -4,3 +4,5 @@ latency: 500
 concurrency: 16
 # 请求超时时间 单位ms
 timeout: 500
+# 优选ip最大数
+number: 20

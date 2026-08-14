@@ -26,7 +26,7 @@ func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
 		fmt.Println("加载配置文件出错:", err)
 		panic(err)
 	}
-	num := 10               // 优选ip数量
+	num := cfg.Number       // 优选ip数量
 	var latencies []Latency // ip与延迟数组
 	var n = cfg.Concurrency // 并发数
 
@@ -84,9 +84,9 @@ func request(ip IP, client *http.Client) float64 {
 	req.Host = "cp.cloudflare.com" // 设置 Host 头为 Cloudflare 的域名
 
 	if _, err := client.Do(req); err == nil {
-		duration = time.Since(start) // Update end time on error
+		duration = time.Since(start)
 	} else {
-		return -1
+		return -1 // Update end time on error
 	}
 	// Process the response to calculate latency
 	return duration.Seconds() // Return latency in milliseconds
