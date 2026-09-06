@@ -21,6 +21,7 @@ func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
 
 	// 监控器ctx用来通知协程停止请求，优选数量已达标
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // 保底释放，避免 context 泄漏
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		fmt.Println("加载配置文件出错:", err)
@@ -67,7 +68,6 @@ func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
 	for r := range results {
 		latencies = append(latencies, Latency{IP: r.IP, Latency: r.Latency})
 		if len(latencies) >= num {
-			// 不只要break，还要通知
 			cancel()
 			break
 		}
