@@ -1,3 +1,28 @@
+# 项目数据（用户提供，含大量 IP 列表）
 ip.txt
+
+# 本地设计/计划文档，不入库
 docs/superpowers/*
 docs/test/*
+
+# ---------- Wails GUI (cmd/app) ----------
+# Task 运行缓存与构建产物
+cmd/app/.task
+cmd/app/bin
+# 前端构建产物与依赖
+cmd/app/frontend/dist
+cmd/app/frontend/node_modules
+# 各平台打包中间产物
+cmd/app/build/linux/appimage/build
+cmd/app/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+
+# 移动端平台模板（当前只发布 Windows / macOS / Linux 桌面端）
+cmd/app/build/android/
+cmd/app/build/ios/
+
+# ---------- 系统与编辑器 ----------
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
