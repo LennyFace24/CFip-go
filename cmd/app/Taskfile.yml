@@ -15,8 +15,7 @@ includes:
   windows: ./build/windows/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
-  ios: ./build/ios/Taskfile.yml
-  android: ./build/android/Taskfile.yml
+  # 移动端（ios / android）当前不发布，相关模板已 gitignore，故不引入
 
 tasks:
   build:
