@@ -34,10 +34,10 @@ const fields: {
   hint: string
   unit: string
 }[] = [
-  { key: 'latency', label: '允许最大延迟', hint: '超过该延迟的结果视为不可用', unit: 'ms' },
+  { key: 'latency', label: '延迟上限', hint: '探测成功但延迟超过它算「超标」，不计入达标数量', unit: 'ms' },
   { key: 'concurrency', label: '并发数', hint: '同时发起探测的协程数量，越大越快但占用更多资源', unit: '个' },
   { key: 'timeout', label: '请求超时', hint: '单个 IP 探测的超时时间', unit: 'ms' },
-  { key: 'number', label: '优选 IP 最大数', hint: '集满该数量的成功结果后自动停止测速', unit: '个' },
+  { key: 'number', label: '达标 IP 数量', hint: '集满该数量的达标 IP 后自动停止测速', unit: '个' },
 ]
 </script>
 

@@ -50,7 +50,7 @@ export interface ImportResult {
 }
 
 /**
- * SpeedResult 单条测速结果。Latency 单位为毫秒，小于 0 表示失败。
+ * SpeedResult 单条测速结果。Latency 单位为毫秒，小于 0 表示请求失败。
  */
 export interface SpeedResult {
     /**
@@ -70,7 +70,20 @@ export interface SpeedSummary {
      * 已探测数量
      */
     "Total": number;
-    "Success": number;
+
+    /**
+     * 达标：探测成功且延迟不超过上限
+     */
+    "Qualified": number;
+
+    /**
+     * 超标：探测成功但延迟超过上限
+     */
+    "OverLimit": number;
+
+    /**
+     * 请求失败
+     */
     "Failed": number;
 
     /**
@@ -79,7 +92,8 @@ export interface SpeedSummary {
     "Elapsed": number;
 
     /**
-     * true = 提前结束（集满或手动停止），false = 全部跑完
+     * true = 提前结束（集满或手动停止）
      */
     "Stopped": boolean;
+    "LogPath": string;
 }

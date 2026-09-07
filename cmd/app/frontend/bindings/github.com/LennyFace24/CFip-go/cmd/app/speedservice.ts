@@ -3,6 +3,7 @@
 
 /**
  * SpeedService 负责流式测速，结果通过事件逐条推给前端。
+ * 停止条件：达标数量达到 cfg.Number。
  * @module
  */
 

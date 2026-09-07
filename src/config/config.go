@@ -14,15 +14,18 @@ import (
 var cfg *Config
 
 type Config struct {
+	// Latency 是延迟上限（毫秒）：探测成功但延迟超过它的 IP 视为「超标」，
+	// 不计入优选结果，也不触发提前停止。
 	Latency     int `yaml:"latency"`
 	Concurrency int `yaml:"concurrency"`
 	Timeout     int `yaml:"timeout"`
-	Number      int `yaml:"number"`
+	// Number 需要凑够的「达标」IP 数量，集满即停止测速
+	Number int `yaml:"number"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		Latency:     500,
+		Latency:     200,
 		Concurrency: 16,
 		Timeout:     500,
 		Number:      20,

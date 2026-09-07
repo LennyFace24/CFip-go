@@ -7,6 +7,7 @@ import ResultTable from './components/ResultTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ToastHost from './components/ToastHost.vue'
 import { useConfig } from './composables/useConfig'
+import { useLog } from './composables/useLog'
 import { useSource } from './composables/useSource'
 import { useSpeedTest } from './composables/useSpeedTest'
 import type { Tab } from './types'
@@ -57,6 +58,8 @@ const {
   copyBest,
   copyOne,
 } = useSpeedTest()
+
+const { exportRows, openDir } = useLog()
 
 const subtitle = computed(() =>
   tab.value === 'speed'
@@ -111,13 +114,16 @@ onMounted(async () => {
               :running="running"
               :progress="progress"
               :summary="summary"
-              :limit="savedConfig.number"
+              :target="savedConfig.number"
+              :latency-limit="savedConfig.latency"
               :avg-latency="avgLatency"
               :best-ip="bestIp"
-              @start="startSpeed(sourceText)"
+              @start="startSpeed(sourceText, savedConfig.latency)"
               @stop="stopSpeed"
               @copy="copyBest(savedConfig.number)"
               @copy-one="copyOne"
+              @export="exportRows(rows, savedConfig.latency)"
+              @open-dir="openDir"
             />
           </div>
 

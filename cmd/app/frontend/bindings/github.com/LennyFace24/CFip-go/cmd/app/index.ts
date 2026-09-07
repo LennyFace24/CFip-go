@@ -3,10 +3,12 @@
 
 import * as ConfigService from "./configservice.js";
 import * as IPService from "./ipservice.js";
+import * as LogService from "./logservice.js";
 import * as SpeedService from "./speedservice.js";
 export {
     ConfigService,
     IPService,
+    LogService,
     SpeedService
 };
 

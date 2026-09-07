@@ -2,22 +2,43 @@
 import { computed, ref } from 'vue'
 import StatTile from './StatTile.vue'
 import { SORT_MODES } from '../constants'
-import type { Progress, Row, SortMode } from '../types'
+import type { Progress, Row, RowState, SortMode } from '../types'
 
 const props = defineProps<{
   rows: Row[]
   running: boolean
   progress: Progress
   summary: string
-  limit: number
+  /** 目标：需要凑够的达标数量 */
+  target: number
+  /** 延迟上限（毫秒），超过即视为超标 */
+  latencyLimit: number
   avgLatency: string
   bestIp: string
 }>()
 
-const emit = defineEmits<{ start: []; stop: []; copy: []; copyOne: [ip: string] }>()
+const emit = defineEmits<{
+  start: []
+  stop: []
+  copy: []
+  copyOne: [ip: string]
+  export: []
+  openDir: []
+}>()
 
 const keyword = ref('')
 const sortMode = ref<SortMode>('latency')
+
+function stateOf(row: Row): RowState {
+  if (row.latency < 0) return 'failed'
+  return row.latency <= props.latencyLimit ? 'qualified' : 'over'
+}
+
+const stateLabel: Record<RowState, string> = {
+  qualified: '达标',
+  over: '超标',
+  failed: '失败',
+}
 
 const filtered = computed<Row[]>(() => {
   const k = keyword.value.trim().toLowerCase()
@@ -39,9 +60,8 @@ const filtered = computed<Row[]>(() => {
   }
 })
 
-const successCount = computed(() => props.rows.filter((row) => row.latency >= 0).length)
 const percent = computed(() =>
-  props.limit > 0 ? Math.min(100, Math.round((successCount.value / props.limit) * 100)) : 0,
+  props.target > 0 ? Math.min(100, Math.round((props.progress.qualified / props.target) * 100)) : 0,
 )
 </script>
 
@@ -61,7 +81,10 @@ const percent = computed(() =>
         </svg>
         <div>
           <h2>测速结果</h2>
-          <p class="card-sub">已探测 {{ props.progress.done }} · 目标 {{ props.limit }} 个可用 IP</p>
+          <p class="card-sub">
+            已探测 {{ props.progress.done }} · 达标 {{ props.progress.qualified }} / {{ props.target }}
+            · 上限 {{ props.latencyLimit }} ms
+          </p>
         </div>
       </div>
 
@@ -77,6 +100,10 @@ const percent = computed(() =>
         <button class="btn ghost" :disabled="!props.rows.length" @click="emit('copy')">
           复制优选
         </button>
+        <button class="btn ghost" :disabled="!props.rows.length" @click="emit('export')">
+          导出日志
+        </button>
+        <button class="btn ghost" @click="emit('openDir')">日志目录</button>
       </div>
     </header>
 
@@ -84,11 +111,12 @@ const percent = computed(() =>
       <div class="progress-bar" :class="{ indeterminate: props.running }">
         <span :style="{ width: percent + '%' }" />
       </div>
-      <span class="progress-text">{{ successCount }} / {{ props.limit }}</span>
+      <span class="progress-text">{{ props.progress.qualified }} / {{ props.target }}</span>
     </div>
 
     <div class="stats">
-      <StatTile label="成功" :value="successCount" tone="ok" />
+      <StatTile label="达标" :value="props.progress.qualified" tone="ok" />
+      <StatTile label="超标" :value="props.progress.over" tone="warn" />
       <StatTile label="失败" :value="props.progress.failed" tone="bad" />
       <StatTile label="平均延迟 (ms)" :value="props.avgLatency" />
       <StatTile label="最快 IP" :value="props.bestIp" mono />
@@ -125,9 +153,7 @@ const percent = computed(() =>
             <td class="mono">{{ row.ip }}</td>
             <td class="num-col mono">{{ row.latency >= 0 ? row.latency.toFixed(1) : '—' }}</td>
             <td>
-              <span class="tag" :class="row.latency >= 0 ? 'ok' : 'bad'">
-                {{ row.latency >= 0 ? '成功' : '失败' }}
-              </span>
+              <span class="tag" :class="stateOf(row)">{{ stateLabel[stateOf(row)] }}</span>
             </td>
             <td class="dim">{{ row.source }}</td>
             <td class="act-col">

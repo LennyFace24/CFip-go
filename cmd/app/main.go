@@ -26,6 +26,7 @@ func main() {
 	configService := &ConfigService{}
 	ipService := &IPService{}
 	speedService := &SpeedService{}
+	logService := &LogService{}
 
 	app := application.New(application.Options{
 		Name:        "CFip",
@@ -34,6 +35,7 @@ func main() {
 			application.NewService(configService),
 			application.NewService(ipService),
 			application.NewService(speedService),
+			application.NewService(logService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -46,6 +48,7 @@ func main() {
 	// 服务需要 app 才能弹系统对话框、发事件、写剪贴板。
 	ipService.app = app
 	speedService.app = app
+	logService.app = app
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "CFip · Cloudflare 优选 IP",

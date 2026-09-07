@@ -11,6 +11,7 @@
 import {
   ConfigService,
   IPService,
+  LogService,
   SpeedService,
 } from '../../bindings/github.com/LennyFace24/CFip-go/cmd/app'
 import type {
@@ -80,6 +81,23 @@ export const api = {
     /** 写入系统剪贴板，返回是否成功 */
     async copy(text: string): Promise<boolean> {
       return (await IPService.CopyToClipboard(text)) as boolean
+    },
+  },
+
+  log: {
+    /** 日志目录路径 */
+    async dir(): Promise<string> {
+      return (await LogService.Dir()) as string
+    },
+
+    /** 弹出保存对话框导出内容，返回实际写入路径 */
+    async export(content: string, filename: string): Promise<string> {
+      return (await LogService.Export(content, filename)) as string
+    },
+
+    /** 用系统文件管理器打开日志目录 */
+    async openDir(): Promise<void> {
+      await LogService.OpenDir()
     },
   },
 

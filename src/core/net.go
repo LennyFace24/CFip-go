@@ -28,10 +28,13 @@ const (
 	probeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
-// RequestAndChooseGoodAndGetLatency 探测全部 IP 并返回成功的延迟列表，
-// 集满 cfg.Number 条即提前停止。并发调度与 StreamLatency 共用一套实现。
+// RequestAndChooseGoodAndGetLatency 探测全部 IP，返回「达标」的延迟列表。
+//
+// 达标 = 探测成功且延迟不超过 cfg.Latency（毫秒）；
+// 请求失败与延迟超标都不计入。集满 cfg.Number 条达标结果即提前停止。
+// 并发调度与 StreamLatency 共用一套实现。
 func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
-	// 监控器ctx用来通知协程停止请求，优选数量已达标
+	// 监控器ctx用来通知协程停止请求，达标数量已足够
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel() // 保底释放，避免 context 泄漏
 
@@ -40,10 +43,11 @@ func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
 		fmt.Println("加载配置文件出错:", err)
 		panic(err)
 	}
+	limitSec := float64(cfg.Latency) / 1000
 
 	var latencies []Latency
 	for r := range StreamLatency(ctx, ips, cfg.Concurrency, nil) {
-		if r.Latency < 0 {
+		if r.Latency < 0 || r.Latency > limitSec {
 			continue
 		}
 		latencies = append(latencies, Latency{IP: r.IP, Latency: r.Latency})

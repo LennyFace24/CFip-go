@@ -21,7 +21,10 @@ export interface Row {
 /** 测速进度 */
 export interface Progress {
   done: number
-  success: number
+  /** 达标：探测成功且延迟不超过上限 */
+  qualified: number
+  /** 超标：探测成功但延迟超过上限 */
+  over: number
   failed: number
 }
 
@@ -48,11 +51,22 @@ export interface ImportResult {
 
 /** 一次测速结束后的汇总 */
 export interface SpeedSummary {
-  success: number
+  /** 已探测总数 */
+  total: number
+  /** 达标：探测成功且延迟不超过上限 */
+  qualified: number
+  /** 超标：探测成功但延迟超过上限 */
+  overLimit: number
+  /** 请求失败 */
   failed: number
   elapsed: number
   stopped: boolean
+  /** 自动写入的日志文件路径 */
+  logPath: string
 }
+
+/** 结果状态：达标 / 超标 / 失败 */
+export type RowState = 'qualified' | 'over' | 'failed'
 
 /** Toast 类型 */
 export type ToastKind = 'info' | 'success' | 'error'
@@ -103,8 +117,10 @@ export interface SpeedResultDTO {
 
 export interface SpeedSummaryDTO {
   Total: number
-  Success: number
+  Qualified: number
+  OverLimit: number
   Failed: number
   Elapsed: number
   Stopped: boolean
+  LogPath: string
 }
