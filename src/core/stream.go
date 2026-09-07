@@ -17,7 +17,15 @@ type StreamResult struct {
 type ProbeLatency func(ip IP) float64
 
 // StreamLatency 并发探测 ips 中的每个 IP，逐条向返回的 channel 发送结果。
-// ctx 取消时停止发送并关闭 channel。probe 为 nil 时使用默认 HTTP 探测。
+//
+// 并发模型：带缓冲 channel 当信号量，在飞任务始终不超过 concurrency 个，
+// 任意一个探测结束就归还名额、立刻补入下一个 IP。
+//
+// 相比「把 ips 等分成 n 片、每片一个 goroutine 顺序执行」的静态分片，
+// 这种动态补位不会被个别慢 IP 拖住整条流水线——总耗时不再由最慢的那片决定。
+//
+// ctx 取消时停止派发新任务，在飞任务退出后关闭 channel。
+// probe 为 nil 时使用默认 HTTP 探测。
 func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLatency) <-chan StreamResult {
 	if probe == nil {
 		client := newClient()
@@ -32,14 +40,24 @@ func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLa
 		return results
 	}
 
+	sem := make(chan struct{}, n) // 信号量：在飞任务上限
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		start := i * len(ips) / n
-		end := len(ips) * (i + 1) / n
-		go func(ips []IP) {
-			defer wg.Done()
-			for _, ip := range ips {
+
+	go func() {
+	dispatch:
+		for _, ip := range ips {
+			// 先占位：名额满了就等，空出一个立刻放行下一个
+			select {
+			case <-ctx.Done():
+				break dispatch
+			case sem <- struct{}{}:
+			}
+
+			wg.Add(1)
+			go func(ip IP) {
+				defer wg.Done()
+				defer func() { <-sem }() // 归还名额
+
 				if ctx.Err() != nil {
 					return // 已取消，不再发起新探测
 				}
@@ -50,15 +68,14 @@ func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLa
 				r := StreamResult{IP: ip, Latency: probe(ip), Source: source}
 				select {
 				case <-ctx.Done():
-					return
 				case results <- r:
 				}
-			}
-		}(ips[start:end])
-	}
-	go func() {
+			}(ip)
+		}
+
 		wg.Wait()
 		close(results)
 	}()
+
 	return results
 }
