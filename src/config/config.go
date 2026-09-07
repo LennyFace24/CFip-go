@@ -29,6 +29,48 @@ func DefaultConfig() *Config {
 	}
 
 }
+// ConfigDir 返回应用配置目录，目录不存在时自动创建
+func ConfigDir() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	appDir := filepath.Join(dir, "cfip-go")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
+		return "", err
+	}
+	return appDir, nil
+}
+
+// ConfigPath 返回配置文件完整路径
+func ConfigPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.yaml"), nil
+}
+
+// Validate 校验配置取值是否合法，GUI 保存前调用
+func (c *Config) Validate() error {
+	if c == nil {
+		return errors.New("配置为空")
+	}
+	if c.Latency <= 0 {
+		return errors.New("允许最大延迟必须大于 0")
+	}
+	if c.Concurrency <= 0 {
+		return errors.New("并发数必须大于 0")
+	}
+	if c.Timeout <= 0 {
+		return errors.New("请求超时时间必须大于 0")
+	}
+	if c.Number <= 0 {
+		return errors.New("优选 IP 最大数必须大于 0")
+	}
+	return nil
+}
+
 // LoadConfig 加载配置文件，启动时加载一次，后续在修改配置文件时也可以调用
 func LoadConfig() (*Config,error) {
 	if cfg == nil {
@@ -43,17 +85,12 @@ func LoadConfig() (*Config,error) {
 }
 
 func LoadConfigFromPath() (*Config,error) {
-	dir, err := os.UserConfigDir()          // /root/.config（可能不存在）
+	path, err := ConfigPath()
 	if err != nil {
-		fmt.Println("获取用户配置目录出错:", err)
+		fmt.Println("获取配置文件路径出错:", err)
 		return nil,err
 	}
-	appDir := filepath.Join(dir, "cfip-go")
-	err = os.MkdirAll(appDir, 0755)
-	if err != nil{
-		fmt.Println("创建目录出错:", err)
-	}
-	file, err := os.ReadFile(appDir + "/config.yaml")
+	file, err := os.ReadFile(path)
 
 	if err != nil {
     	if !errors.Is(err, fs.ErrNotExist) {
@@ -67,7 +104,16 @@ func LoadConfigFromPath() (*Config,error) {
 		return cfg,nil
 	}
 	var config1 Config
-	yaml.Unmarshal(file, &config1)
+	if err := yaml.Unmarshal(file, &config1); err != nil {
+		fmt.Println("解析配置文件出错:", err)
+		return nil,err
+	}
+	// 兼容空文件或缺字段的配置：0 值回落到默认
+	fallback := DefaultConfig()
+	if config1.Latency == 0 { config1.Latency = fallback.Latency }
+	if config1.Concurrency == 0 { config1.Concurrency = fallback.Concurrency }
+	if config1.Timeout == 0 { config1.Timeout = fallback.Timeout }
+	if config1.Number == 0 { config1.Number = fallback.Number }
 	cfg = &config1
 	return cfg,nil
 }
@@ -79,14 +125,12 @@ func UpdateConfigAndSave(config *Config) error {
 		fmt.Println("序列化配置文件出错:", err)
 		return err
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil{
-		fmt.Println("获取用户配置目录出错:", err)
+	path, err := ConfigPath()
+	if err != nil {
+		fmt.Println("获取配置文件路径出错:", err)
 		return err
 	}
-	appDir := filepath.Join(dir, "cfip-go")
-	err = os.WriteFile(appDir+"/config.yaml", file, 0644)
-	if err != nil{
+	if err := os.WriteFile(path, file, 0644); err != nil {
 		fmt.Println("写入配置文件出错:", err)
 		return err
 	}
