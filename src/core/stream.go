@@ -20,10 +20,7 @@ type ProbeLatency func(ip IP) ProbeResult
 // StreamLatency 并发探测 ips 中的每个 IP，逐条向返回的 channel 发送结果。
 //
 // 并发模型：带缓冲 channel 当信号量，在飞任务始终不超过 concurrency 个，
-// 任意一个探测结束就归还名额、立刻补入下一个 IP。
-//
-// 相比「把 ips 等分成 n 片、每片一个 goroutine 顺序执行」的静态分片，
-// 这种动态补位不会被个别慢 IP 拖住整条流水线——总耗时不再由最慢的那片决定。
+// 一个探测结束就归还名额并立刻补入下一个 IP，避免个别慢 IP 拖住整体进度。
 //
 // ctx 取消时停止派发新任务，在飞任务退出后关闭 channel。
 // probe 为 nil 时使用默认 HTTP 探测。

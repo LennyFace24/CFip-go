@@ -104,12 +104,13 @@ func (s *SpeedService) run(ctx context.Context, cancel context.CancelFunc, ips [
 	for r := range core.StreamLatency(ctx, ips, cfg.Concurrency, nil) {
 		seq++
 		ms := r.Latency * 1000 // 秒 → 毫秒
+		// 顺序不能颠倒：请求失败时拿不到 cf-ray，若先判机房会被误记成「机房不符」
 		allowed := core.ColoAllowed(r.Colo, whitelist)
 		switch {
-		case !allowed:
-			excluded++
 		case r.Latency < 0:
 			failed++
+		case !allowed:
+			excluded++
 		case ms <= limitMs:
 			qualified++
 		default:

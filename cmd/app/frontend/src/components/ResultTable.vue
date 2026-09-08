@@ -30,8 +30,8 @@ const keyword = ref('')
 const sortMode = ref<SortMode>('latency')
 
 function stateOf(row: Row): RowState {
-  if (!row.allowed) return 'excluded'
   if (row.latency < 0) return 'failed'
+  if (!row.allowed) return 'excluded'
   return row.latency <= props.latencyLimit ? 'qualified' : 'over'
 }
 

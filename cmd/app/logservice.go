@@ -35,12 +35,12 @@ func isQualified(r SpeedResult, latencyLimit int) bool {
 	return r.Latency >= 0 && r.Latency <= float64(latencyLimit)
 }
 
-// resultRank 排序权重：达标 → 超标 → 失败 → 机房不符
+// resultRank 排序权重：达标 → 超标 → 机房不符 → 失败
 func resultRank(r SpeedResult, cfg *config.Config, whitelist []string) int {
 	switch {
-	case !core.ColoAllowed(r.Colo, whitelist):
-		return 3
 	case r.Latency < 0:
+		return 3
+	case !core.ColoAllowed(r.Colo, whitelist):
 		return 2
 	case isQualified(r, cfg.Latency):
 		return 0
@@ -50,7 +50,7 @@ func resultRank(r SpeedResult, cfg *config.Config, whitelist []string) int {
 }
 
 // WriteSpeedLog 把一次测速结果写入固定的 speed-latest.txt（覆盖上一次）。
-// 内容按「达标 → 超标 → 失败 → 机房不符」排序，同组内延迟升序。
+// 内容按「达标 → 超标 → 机房不符 → 失败」排序，同组内延迟升序。
 func WriteSpeedLog(rows []SpeedResult, summary SpeedSummary, cfg *config.Config) (string, error) {
 	dir, err := LogDir()
 	if err != nil {

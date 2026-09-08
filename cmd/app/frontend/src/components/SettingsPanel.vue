@@ -97,7 +97,9 @@ const fields: {
     <div class="colo-block">
       <div class="setting-text">
         <span class="setting-title">机房白名单</span>
-        <span class="setting-desc">空格分隔的 IATA 代码，如 HKG NRT SIN；留空则不过滤</span>
+        <span class="setting-desc">
+          空格分隔的 IATA 代码，如 HKG NRT SIN；留空则不过滤。白名单过窄可能一个都选不出来
+        </span>
       </div>
       <input
         class="input colo-input"

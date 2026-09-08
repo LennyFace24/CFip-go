@@ -21,11 +21,13 @@ type ProbeResult struct {
 	Colo    string // 机房代码，取自 cf-ray；空串表示未取到
 }
 
-// 测速目标。
+// 测速目标：明文 HTTP + HEAD，只取响应头，不下载正文。
 //
-// 默认使用明文 HTTP：优选 IP 关心的是链路质量排序，而 HTTP 与 HTTPS 的排序
-// 结果一致（TLS 只是在同一条路径上多跑几个往返），成本却只有约三分之一。
-// 需要 HTTPS 时把 probeScheme 改成 "https" 即可，其余逻辑无需改动。
+// 用 HTTP 而非 HTTPS 是为了省掉 TLS 握手，单次探测成本约三分之一；
+// 排序只关心链路质量，两种协议的排序结果一致。改 probeScheme 即可切回 https。
+//
+// 注意 Cloudflare 对 /cdn-cgi/trace 的 HEAD 返回 404，属于预期行为：
+// 我们只取响应头里的 cf-ray 与往返耗时，不校验状态码。
 const (
 	probeScheme   = "http"
 	probeHostname = "cp.cloudflare.com"

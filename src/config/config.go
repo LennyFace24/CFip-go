@@ -27,7 +27,7 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Latency:     200,
+		Latency:     500,
 		Concurrency: 16,
 		Timeout:     500,
 		Number:      20,

@@ -64,9 +64,10 @@ export function useSpeedTest() {
         },
       ]
 
-      const excluded = !r.Allowed
-      const failed = !excluded && r.Latency < 0
-      const over = !excluded && !failed && r.Latency > latencyLimit.value
+      // 与后端一致：先判是否连上，再判机房，否则失败会被误记成机房不符
+      const failed = r.Latency < 0
+      const excluded = !failed && !r.Allowed
+      const over = !failed && !excluded && r.Latency > latencyLimit.value
       const p = progress.value
       progress.value = {
         done: p.done + 1,

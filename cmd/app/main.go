@@ -7,11 +7,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// Wails uses Go's `embed` package to embed the frontend files into the binary.
-// Any files in the frontend/dist folder will be embedded into the binary and
-// made available to the frontend.
-// See https://pkg.go.dev/embed for more information.
-
 //go:embed all:frontend/dist
 var assets embed.FS
 
@@ -67,11 +62,7 @@ func main() {
 		URL:              "/",
 	})
 
-	// Run the application. This blocks until the application has been exited.
-	err := app.Run()
-
-	// If an error occurred while running the application, log it and exit.
-	if err != nil {
+	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
 }

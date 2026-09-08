@@ -2,7 +2,7 @@
 
 /** 默认测速参数（后端 config.DefaultConfig 的镜像，首屏先用它渲染） */
 export const DEFAULT_CONFIG = {
-  latency: 200,
+  latency: 500,
   concurrency: 16,
   timeout: 500,
   number: 20,
