@@ -4,7 +4,7 @@ withDefaults(
   defineProps<{
     label: string
     value: string | number
-    tone?: 'default' | 'ok' | 'warn' | 'bad'
+    tone?: 'default' | 'ok' | 'warn' | 'bad' | 'muted'
     mono?: boolean
   }>(),
   { tone: 'default', mono: false },

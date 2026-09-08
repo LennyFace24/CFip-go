@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import type { Config } from '../types'
+import { toggleColo, splitColo } from '../composables/useColo'
+import type { ColoOption, Config } from '../types'
 
 const props = defineProps<{
   draft: Config
   dirty: boolean
   saving: boolean
+  /** 内置推荐机房，用于快捷选择 */
+  recommended: ColoOption[]
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +29,20 @@ watch(
 
 function commit(): void {
   emit('update:draft', { ...local.value })
+}
+
+function onColo(event: Event): void {
+  local.value.colo = (event.target as HTMLInputElement).value
+  commit()
+}
+
+function isColoOn(code: string): boolean {
+  return splitColo(local.value.colo).includes(code.toUpperCase())
+}
+
+function switchColo(code: string): void {
+  local.value.colo = toggleColo(local.value.colo, code)
+  commit()
 }
 
 const fields: {
@@ -74,6 +91,32 @@ const fields: {
           />
           <em>{{ field.unit }}</em>
         </div>
+      </div>
+    </div>
+
+    <div class="colo-block">
+      <div class="setting-text">
+        <span class="setting-title">机房白名单</span>
+        <span class="setting-desc">空格分隔的 IATA 代码，如 HKG NRT SIN；留空则不过滤</span>
+      </div>
+      <input
+        class="input colo-input"
+        type="text"
+        :value="local.colo"
+        placeholder="留空 = 不过滤"
+        @change="onColo"
+      />
+      <div class="chips">
+        <button
+          v-for="colo in props.recommended"
+          :key="colo.code"
+          type="button"
+          class="chip-toggle"
+          :class="{ on: isColoOn(colo.code) }"
+          @click="switchColo(colo.code)"
+        >
+          {{ colo.code }} · {{ colo.name }}
+        </button>
       </div>
     </div>
 

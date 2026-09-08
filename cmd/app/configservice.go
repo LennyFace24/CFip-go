@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/LennyFace24/CFip-go/src/config"
 )
 
@@ -10,6 +12,7 @@ type ConfigDTO struct {
 	Concurrency int
 	Timeout     int
 	Number      int
+	Colo        string
 	Path        string
 }
 
@@ -27,12 +30,13 @@ func (c *ConfigService) Get() (ConfigDTO, error) {
 }
 
 // Save 校验并写入配置。任一项不合法时返回错误，不落盘。
-func (c *ConfigService) Save(latency, concurrency, timeout, number int) error {
+func (c *ConfigService) Save(latency, concurrency, timeout, number int, colo string) error {
 	cfg := &config.Config{
 		Latency:     latency,
 		Concurrency: concurrency,
 		Timeout:     timeout,
 		Number:      number,
+		Colo:        strings.TrimSpace(colo),
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -54,6 +58,7 @@ func toDTO(cfg *config.Config, path string) ConfigDTO {
 		Concurrency: cfg.Concurrency,
 		Timeout:     cfg.Timeout,
 		Number:      cfg.Number,
+		Colo:        cfg.Colo,
 		Path:        path,
 	}
 }

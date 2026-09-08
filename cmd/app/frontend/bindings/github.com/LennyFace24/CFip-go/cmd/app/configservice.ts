@@ -32,6 +32,6 @@ export function Get(): $CancellablePromise<$models.ConfigDTO> {
 /**
  * Save 校验并写入配置。任一项不合法时返回错误，不落盘。
  */
-export function Save(latency: number, concurrency: number, timeout: number, $number: number): $CancellablePromise<void> {
-    return $Call.ByID(2730444782, latency, concurrency, timeout, $number);
+export function Save(latency: number, concurrency: number, timeout: number, $number: number, colo: string): $CancellablePromise<void> {
+    return $Call.ByID(2730444782, latency, concurrency, timeout, $number, colo);
 }

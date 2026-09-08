@@ -15,6 +15,12 @@ type Latency struct {
 	Latency float64
 }
 
+// ProbeResult 单次探测结果。Latency 单位为秒，小于 0 表示失败。
+type ProbeResult struct {
+	Latency float64
+	Colo    string // 机房代码，取自 cf-ray；空串表示未取到
+}
+
 // 测速目标。
 //
 // 默认使用明文 HTTP：优选 IP 关心的是链路质量排序，而 HTTP 与 HTTPS 的排序
@@ -59,21 +65,27 @@ func RequestAndChooseGoodAndGetLatency(ips []IP) []Latency {
 	return latencies
 }
 
-// request 探测单个 IP，返回耗时（秒）；失败返回 -1。
-func request(ip IP, client *http.Client) float64 {
+// request 探测单个 IP，返回耗时（秒）与机房代码；失败时 Latency 为 -1。
+func request(ip IP, client *http.Client) ProbeResult {
 	req, err := http.NewRequest(http.MethodHead, probeScheme+"://"+ip.IP+probePath, nil)
 	if err != nil {
-		return -1
+		return ProbeResult{Latency: -1}
 	}
 	// Host 决定 Cloudflare 用哪个站点来响应，连接地址仍是 ip 本身
 	req.Host = probeHostname
 	req.Header.Set("User-Agent", probeUserAgent)
 
 	start := time.Now()
-	if _, err := client.Do(req); err != nil {
-		return -1
+	resp, err := client.Do(req)
+	if err != nil {
+		return ProbeResult{Latency: -1}
 	}
-	return time.Since(start).Seconds()
+	defer resp.Body.Close()
+
+	return ProbeResult{
+		Latency: time.Since(start).Seconds(),
+		Colo:    ParseColo(resp.Header.Get("cf-ray")),
+	}
 }
 
 func newClient() *http.Client {

@@ -6,6 +6,7 @@ import SourcePanel from './components/SourcePanel.vue'
 import ResultTable from './components/ResultTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ToastHost from './components/ToastHost.vue'
+import { useColo } from './composables/useColo'
 import { useConfig } from './composables/useConfig'
 import { useLog } from './composables/useLog'
 import { useSource } from './composables/useSource'
@@ -60,6 +61,7 @@ const {
 } = useSpeedTest()
 
 const { exportRows, openDir } = useLog()
+const { recommended, load: loadColos } = useColo()
 
 const subtitle = computed(() =>
   tab.value === 'speed'
@@ -69,7 +71,7 @@ const subtitle = computed(() =>
 
 onMounted(async () => {
   subscribe()
-  await Promise.all([loadConfig(), initSource()])
+  await Promise.all([loadConfig(), initSource(), loadColos()])
 })
 </script>
 
@@ -132,6 +134,7 @@ onMounted(async () => {
               v-model:draft="draft"
               :dirty="dirty"
               :saving="saving"
+              :recommended="recommended"
               @save="saveConfig"
               @cancel="cancelConfig"
               @reset="resetConfig"

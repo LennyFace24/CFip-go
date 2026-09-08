@@ -11,10 +11,11 @@ type StreamResult struct {
 	IP      IP
 	Latency float64
 	Source  string // "单IP" 或 "网段采样"
+	Colo    string // 机房代码，取自 cf-ray，可能为空
 }
 
 // ProbeLatency 探测函数签名，便于测试注入
-type ProbeLatency func(ip IP) float64
+type ProbeLatency func(ip IP) ProbeResult
 
 // StreamLatency 并发探测 ips 中的每个 IP，逐条向返回的 channel 发送结果。
 //
@@ -29,7 +30,7 @@ type ProbeLatency func(ip IP) float64
 func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLatency) <-chan StreamResult {
 	if probe == nil {
 		client := newClient()
-		probe = func(ip IP) float64 {
+		probe = func(ip IP) ProbeResult {
 			return request(ip, client)
 		}
 	}
@@ -65,7 +66,8 @@ func StreamLatency(ctx context.Context, ips []IP, concurrency int, probe ProbeLa
 				if ip.isCIDR {
 					source = "网段采样"
 				}
-				r := StreamResult{IP: ip, Latency: probe(ip), Source: source}
+				p := probe(ip)
+				r := StreamResult{IP: ip, Latency: p.Latency, Source: source, Colo: p.Colo}
 				select {
 				case <-ctx.Done():
 				case results <- r:

@@ -17,6 +17,8 @@ import {
 import type {
   CidrSource,
   CidrSourceDTO,
+  ColoOption,
+  ColoOptionDTO,
   Config,
   ConfigDTO,
   ImportResult,
@@ -29,6 +31,7 @@ function toConfig(dto: ConfigDTO): Config {
     concurrency: dto.Concurrency,
     timeout: dto.Timeout,
     number: dto.Number,
+    colo: dto.Colo ?? '',
     path: dto.Path,
   }
 }
@@ -42,7 +45,13 @@ export const api = {
 
     /** 校验并写入配置 */
     async save(config: Config): Promise<void> {
-      await ConfigService.Save(config.latency, config.concurrency, config.timeout, config.number)
+      await ConfigService.Save(
+        config.latency,
+        config.concurrency,
+        config.timeout,
+        config.number,
+        config.colo,
+      )
     },
 
     /** 内置默认配置 */
@@ -60,6 +69,12 @@ export const api = {
         online: Boolean(dto.Online),
         error: dto.Error ?? '',
       }
+    },
+
+    /** 对中国大陆较友好的推荐机房，供界面快捷选择 */
+    async recommendedColos(): Promise<ColoOption[]> {
+      const list = (await IPService.RecommendedColos()) as ColoOptionDTO[]
+      return (list ?? []).map((item) => ({ code: item.Code, name: item.Name }))
     },
 
     /** 指定网段文本，每行一条；cidrs 为空时返回全部内置网段 */

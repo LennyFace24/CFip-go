@@ -49,3 +49,10 @@ export function ImportFile(): $CancellablePromise<$models.ImportResult> {
 export function Parse(text: string): $CancellablePromise<number> {
     return $Call.ByID(2825038871, text);
 }
+
+/**
+ * RecommendedColos 返回对中国大陆访问较友好的机房列表。
+ */
+export function RecommendedColos(): $CancellablePromise<$models.ColoOption[] | null> {
+    return $Call.ByID(4154538229);
+}

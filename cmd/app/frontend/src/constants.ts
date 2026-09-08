@@ -2,10 +2,12 @@
 
 /** 默认测速参数（后端 config.DefaultConfig 的镜像，首屏先用它渲染） */
 export const DEFAULT_CONFIG = {
-  latency: 500,
+  latency: 200,
   concurrency: 16,
   timeout: 500,
   number: 20,
+  /** 机房白名单，空格分隔；空串表示不过滤 */
+  colo: '',
 } as const
 
 /** 网段采样数默认值与取值范围 */

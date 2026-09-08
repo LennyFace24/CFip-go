@@ -16,30 +16,45 @@ export interface Row {
   ip: string
   latency: number
   source: string
+  /** 机房代码，取自 cf-ray，可能为空 */
+  colo: string
+  /** 是否通过机房白名单 */
+  allowed: boolean
 }
 
 /** 测速进度 */
 export interface Progress {
   done: number
-  /** 达标：探测成功且延迟不超过上限 */
+  /** 达标：通过白名单、探测成功且延迟不超过上限 */
   qualified: number
   /** 超标：探测成功但延迟超过上限 */
   over: number
+  /** 请求失败 */
   failed: number
+  /** 机房不符：未通过白名单 */
+  excluded: number
 }
 
 /** 测速配置 */
 export interface Config {
-  /** 允许最大延迟（ms） */
+  /** 延迟上限（ms） */
   latency: number
   /** 并发数 */
   concurrency: number
   /** 单请求超时（ms） */
   timeout: number
-  /** 优选 IP 最大数，集满即停 */
+  /** 达标 IP 数量，集满即停 */
   number: number
+  /** 机房白名单，空格分隔的 IATA 代码；空串表示不过滤 */
+  colo: string
   /** 配置文件磁盘路径，仅用于展示 */
   path: string
+}
+
+/** 内置推荐的机房 */
+export interface ColoOption {
+  code: string
+  name: string
 }
 
 /** 导入 ip.txt 的结果 */
@@ -53,20 +68,18 @@ export interface ImportResult {
 export interface SpeedSummary {
   /** 已探测总数 */
   total: number
-  /** 达标：探测成功且延迟不超过上限 */
   qualified: number
-  /** 超标：探测成功但延迟超过上限 */
   overLimit: number
-  /** 请求失败 */
   failed: number
+  excluded: number
   elapsed: number
   stopped: boolean
   /** 自动写入的日志文件路径 */
   logPath: string
 }
 
-/** 结果状态：达标 / 超标 / 失败 */
-export type RowState = 'qualified' | 'over' | 'failed'
+/** 结果状态：达标 / 超标 / 失败 / 机房不符 */
+export type RowState = 'qualified' | 'over' | 'failed' | 'excluded'
 
 /** Toast 类型 */
 export type ToastKind = 'info' | 'success' | 'error'
@@ -93,7 +106,13 @@ export interface ConfigDTO {
   Concurrency: number
   Timeout: number
   Number: number
+  Colo: string
   Path: string
+}
+
+export interface ColoOptionDTO {
+  Code: string
+  Name: string
 }
 
 export interface CidrSourceDTO {
@@ -113,6 +132,8 @@ export interface SpeedResultDTO {
   IP: string
   Latency: number
   Source: string
+  Colo: string
+  Allowed: boolean
 }
 
 export interface SpeedSummaryDTO {
@@ -120,6 +141,7 @@ export interface SpeedSummaryDTO {
   Qualified: number
   OverLimit: number
   Failed: number
+  Excluded: number
   Elapsed: number
   Stopped: boolean
   LogPath: string

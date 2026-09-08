@@ -30,6 +30,7 @@ const keyword = ref('')
 const sortMode = ref<SortMode>('latency')
 
 function stateOf(row: Row): RowState {
+  if (!row.allowed) return 'excluded'
   if (row.latency < 0) return 'failed'
   return row.latency <= props.latencyLimit ? 'qualified' : 'over'
 }
@@ -38,6 +39,7 @@ const stateLabel: Record<RowState, string> = {
   qualified: '达标',
   over: '超标',
   failed: '失败',
+  excluded: '机房不符',
 }
 
 const filtered = computed<Row[]>(() => {
@@ -118,6 +120,7 @@ const percent = computed(() =>
       <StatTile label="达标" :value="props.progress.qualified" tone="ok" />
       <StatTile label="超标" :value="props.progress.over" tone="warn" />
       <StatTile label="失败" :value="props.progress.failed" tone="bad" />
+      <StatTile label="机房不符" :value="props.progress.excluded" tone="muted" />
       <StatTile label="平均延迟 (ms)" :value="props.avgLatency" />
       <StatTile label="最快 IP" :value="props.bestIp" mono />
     </div>
@@ -143,6 +146,7 @@ const percent = computed(() =>
           <tr>
             <th>IP</th>
             <th class="num-col">延迟 (ms)</th>
+            <th>机房</th>
             <th>状态</th>
             <th>来源</th>
             <th class="act-col" />
@@ -152,6 +156,7 @@ const percent = computed(() =>
           <tr v-for="row in filtered" :key="row.seq">
             <td class="mono">{{ row.ip }}</td>
             <td class="num-col mono">{{ row.latency >= 0 ? row.latency.toFixed(1) : '—' }}</td>
+            <td class="mono dim">{{ row.colo || '—' }}</td>
             <td>
               <span class="tag" :class="stateOf(row)">{{ stateLabel[stateOf(row)] }}</span>
             </td>
@@ -177,7 +182,7 @@ const percent = computed(() =>
           </tr>
 
           <tr v-if="!filtered.length">
-            <td colspan="5" class="empty">
+            <td colspan="6" class="empty">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM13.2 17h-2.4v-6h2.4v6z"

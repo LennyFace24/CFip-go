@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// fakeProbe: 2.2.2.2 失败(-1)，其余成功(12.5ms)
-func fakeProbe(ip IP) float64 {
+// fakeProbe: 2.2.2.2 失败(-1)，其余成功(12.5ms) 且机房为 HKG
+func fakeProbe(ip IP) ProbeResult {
 	if ip.IP == "2.2.2.2" {
-		return -1
+		return ProbeResult{Latency: -1}
 	}
-	return 12.5
+	return ProbeResult{Latency: 12.5, Colo: "HKG"}
 }
 
 func TestStreamLatencyEmitsAllResults(t *testing.T) {

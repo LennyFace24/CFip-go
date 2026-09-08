@@ -17,14 +17,17 @@ type SpeedResult struct {
 	IP      string
 	Latency float64
 	Source  string
+	Colo    string // 机房代码，取自 cf-ray；可能为空
+	Allowed bool   // 是否通过机房白名单，前端据此标记「机房不符」
 }
 
 // SpeedSummary 一次测速结束后的汇总。
 type SpeedSummary struct {
 	Total     int   // 已探测数量
-	Qualified int   // 达标：探测成功且延迟不超过上限
+	Qualified int   // 达标：机房通过白名单、探测成功且延迟不超过上限
 	OverLimit int   // 超标：探测成功但延迟超过上限
 	Failed    int   // 请求失败
+	Excluded  int   // 机房不符：未通过白名单
 	Elapsed   int64 // 耗时（毫秒）
 	Stopped   bool  // true = 提前结束（集满或手动停止）
 	LogPath   string
@@ -93,14 +96,18 @@ func (s *SpeedService) run(ctx context.Context, cancel context.CancelFunc, ips [
 
 	start := time.Now()
 	limitMs := float64(cfg.Latency)
-	seq, qualified, overLimit, failed := 0, 0, 0, 0
+	whitelist := core.SplitColos(cfg.Colo)
+	seq, qualified, overLimit, failed, excluded := 0, 0, 0, 0, 0
 	stopped := false
 	collected := make([]SpeedResult, 0, len(ips))
 
 	for r := range core.StreamLatency(ctx, ips, cfg.Concurrency, nil) {
 		seq++
 		ms := r.Latency * 1000 // 秒 → 毫秒
+		allowed := core.ColoAllowed(r.Colo, whitelist)
 		switch {
+		case !allowed:
+			excluded++
 		case r.Latency < 0:
 			failed++
 		case ms <= limitMs:
@@ -109,7 +116,14 @@ func (s *SpeedService) run(ctx context.Context, cancel context.CancelFunc, ips [
 			overLimit++
 		}
 
-		result := SpeedResult{Seq: seq, IP: r.IP.IP, Latency: ms, Source: r.Source}
+		result := SpeedResult{
+			Seq:     seq,
+			IP:      r.IP.IP,
+			Latency: ms,
+			Source:  r.Source,
+			Colo:    r.Colo,
+			Allowed: allowed,
+		}
 		collected = append(collected, result)
 		s.emit("speed:result", result)
 
@@ -124,6 +138,7 @@ func (s *SpeedService) run(ctx context.Context, cancel context.CancelFunc, ips [
 		Qualified: qualified,
 		OverLimit: overLimit,
 		Failed:    failed,
+		Excluded:  excluded,
 		Elapsed:   time.Since(start).Milliseconds(),
 		Stopped:   stopped,
 	}

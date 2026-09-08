@@ -16,7 +16,7 @@ const EVENT_RESULT = 'speed:result'
 const EVENT_DONE = 'speed:done'
 
 function emptyProgress(): Progress {
-  return { done: 0, qualified: 0, over: 0, failed: 0 }
+  return { done: 0, qualified: 0, over: 0, failed: 0, excluded: 0 }
 }
 
 export function useSpeedTest() {
@@ -31,8 +31,11 @@ export function useSpeedTest() {
   /** 本次测速采用的延迟上限（毫秒），用于判定达标 */
   const latencyLimit = ref<number>(DEFAULT_CONFIG.latency)
 
+  // 达标必须通过机房白名单
   const qualified = computed(() =>
-    rows.value.filter((row) => row.latency >= 0 && row.latency <= latencyLimit.value),
+    rows.value.filter(
+      (row) => row.allowed && row.latency >= 0 && row.latency <= latencyLimit.value,
+    ),
   )
 
   const avgLatency = computed(() => {
@@ -49,16 +52,28 @@ export function useSpeedTest() {
   function subscribe(): void {
     Events.On(EVENT_RESULT, (event: { data: SpeedResultDTO }) => {
       const r = event.data
-      rows.value = [...rows.value, { seq: r.Seq, ip: r.IP, latency: r.Latency, source: r.Source }]
+      rows.value = [
+        ...rows.value,
+        {
+          seq: r.Seq,
+          ip: r.IP,
+          latency: r.Latency,
+          source: r.Source,
+          colo: r.Colo,
+          allowed: r.Allowed,
+        },
+      ]
 
-      const failed = r.Latency < 0
-      const over = !failed && r.Latency > latencyLimit.value
+      const excluded = !r.Allowed
+      const failed = !excluded && r.Latency < 0
+      const over = !excluded && !failed && r.Latency > latencyLimit.value
       const p = progress.value
       progress.value = {
         done: p.done + 1,
-        qualified: p.qualified + (!failed && !over ? 1 : 0),
+        qualified: p.qualified + (!excluded && !failed && !over ? 1 : 0),
         over: p.over + (over ? 1 : 0),
         failed: p.failed + (failed ? 1 : 0),
+        excluded: p.excluded + (excluded ? 1 : 0),
       }
     })
 
@@ -67,7 +82,8 @@ export function useSpeedTest() {
       running.value = false
       lastLogPath.value = s.LogPath
       summary.value =
-        `${s.Stopped ? '已提前结束' : '全部跑完'} · 达标 ${s.Qualified} · 超标 ${s.OverLimit} · 失败 ${s.Failed} · 耗时 ${s.Elapsed} ms`
+        `${s.Stopped ? '已提前结束' : '全部跑完'} · 达标 ${s.Qualified} · 超标 ${s.OverLimit}` +
+        ` · 失败 ${s.Failed} · 机房不符 ${s.Excluded} · 耗时 ${s.Elapsed} ms`
     })
   }
 

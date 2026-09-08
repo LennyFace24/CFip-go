@@ -12,7 +12,7 @@ import type { Config } from '../types'
 import { useToast } from './useToast'
 
 function emptyConfig(): Config {
-  return { ...DEFAULT_CONFIG, path: '' }
+  return { ...DEFAULT_CONFIG, colo: '', path: '' }
 }
 
 export function useConfig() {

@@ -20,6 +20,12 @@ type CIDRSource struct {
 	Error  string // 在线拉取失败的原因，仅 Online 为 false 时有值
 }
 
+// ColoOption 内置推荐的机房，供界面快捷选择。
+type ColoOption struct {
+	Code string // IATA 三字码
+	Name string // 中文名
+}
+
 // ImportResult 导入 ip.txt 的结果。
 type ImportResult struct {
 	Path    string // 文件完整路径
@@ -52,6 +58,16 @@ func fetchOnlineCIDRs() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cidrFetchTimeout)
 	defer cancel()
 	return core.FetchCIDRs(ctx, core.CloudflareIPv4URL)
+}
+
+// RecommendedColos 返回对中国大陆访问较友好的机房列表。
+func (s *IPService) RecommendedColos() []ColoOption {
+	list := core.RecommendedColos
+	out := make([]ColoOption, 0, len(list))
+	for _, colo := range list {
+		out = append(out, ColoOption{Code: colo.Code, Name: colo.Name})
+	}
+	return out
 }
 
 // BuiltinText 返回指定网段的文本，每行一条；sample <= 0 时不指定采样数。

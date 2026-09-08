@@ -494,6 +494,7 @@ p { margin: 0; }
 .stat-value.ok { color: var(--success); }
 .stat-value.warn { color: var(--warn); }
 .stat-value.bad { color: var(--danger); }
+.stat-value.muted { color: var(--text-faint); }
 .stat-value.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
 .stat-label { color: var(--text-faint); font-size: 11.5px; }
 
@@ -564,6 +565,7 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
 .tag.qualified { background: var(--success-soft); color: var(--success); }
 .tag.over { background: var(--warn-soft); color: var(--warn); }
 .tag.failed { background: var(--danger-soft); color: var(--danger); }
+.tag.excluded { background: rgba(255, 255, 255, 0.07); color: var(--text-faint); }
 
 .icon-btn {
     display: inline-grid;
@@ -619,6 +621,17 @@ tbody tr:hover .icon-btn { opacity: 1; }
 .setting-desc { color: var(--text-faint); font-size: 12px; }
 .setting-control { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .setting-control em { color: var(--text-faint); font-style: normal; font-size: 12px; }
+
+/* 机房白名单：说明 + 输入框 + 快捷 chip */
+.colo-block {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 14px 4px 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.colo-input { width: 100%; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 /* ===========================  Toast  =========================== */
 .toast-host {

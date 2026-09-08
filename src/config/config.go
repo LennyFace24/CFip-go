@@ -21,6 +21,8 @@ type Config struct {
 	Timeout     int `yaml:"timeout"`
 	// Number 需要凑够的「达标」IP 数量，集满即停止测速
 	Number int `yaml:"number"`
+	// Colo 机房白名单，空格分隔的 IATA 代码（如 "HKG NRT SIN"）；留空表示不过滤
+	Colo string `yaml:"colo"`
 }
 
 func DefaultConfig() *Config {
@@ -29,6 +31,7 @@ func DefaultConfig() *Config {
 		Concurrency: 16,
 		Timeout:     500,
 		Number:      20,
+		Colo:        "",
 	}
 
 }

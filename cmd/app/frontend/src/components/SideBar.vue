@@ -23,14 +23,7 @@ const items: NavItem[] = [
 
 <template>
   <aside class="sidebar">
-    <div class="brand">
-      <span class="brand-logo">CF</span>
-      <div class="brand-text">
-        <span class="brand-name">CFip</span>
-        <span class="brand-sub">优选 IP 测速</span>
-      </div>
-    </div>
-
+    
     <nav class="nav">
       <button
         v-for="item in items"

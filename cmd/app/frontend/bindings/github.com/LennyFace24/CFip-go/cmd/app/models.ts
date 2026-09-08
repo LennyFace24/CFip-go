@@ -19,6 +19,21 @@ export interface CIDRSource {
 }
 
 /**
+ * ColoOption 内置推荐的机房，供界面快捷选择。
+ */
+export interface ColoOption {
+    /**
+     * IATA 三字码
+     */
+    "Code": string;
+
+    /**
+     * 中文名
+     */
+    "Name": string;
+}
+
+/**
  * ConfigDTO 是给前端用的配置视图，字段与 config.Config 一一对应。
  */
 export interface ConfigDTO {
@@ -26,6 +41,7 @@ export interface ConfigDTO {
     "Concurrency": number;
     "Timeout": number;
     "Number": number;
+    "Colo": string;
     "Path": string;
 }
 
@@ -60,6 +76,16 @@ export interface SpeedResult {
     "IP": string;
     "Latency": number;
     "Source": string;
+
+    /**
+     * 机房代码，取自 cf-ray；可能为空
+     */
+    "Colo": string;
+
+    /**
+     * 是否通过机房白名单，前端据此标记「机房不符」
+     */
+    "Allowed": boolean;
 }
 
 /**
@@ -72,7 +98,7 @@ export interface SpeedSummary {
     "Total": number;
 
     /**
-     * 达标：探测成功且延迟不超过上限
+     * 达标：机房通过白名单、探测成功且延迟不超过上限
      */
     "Qualified": number;
 
@@ -85,6 +111,11 @@ export interface SpeedSummary {
      * 请求失败
      */
     "Failed": number;
+
+    /**
+     * 机房不符：未通过白名单
+     */
+    "Excluded": number;
 
     /**
      * 耗时（毫秒）

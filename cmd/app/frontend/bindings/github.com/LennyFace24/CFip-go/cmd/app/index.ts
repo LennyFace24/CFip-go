@@ -14,6 +14,7 @@ export {
 
 export type {
     CIDRSource,
+    ColoOption,
     ConfigDTO,
     ImportResult,
     SpeedResult,
