@@ -5,6 +5,7 @@ import (
 	"os"
 	"errors"
 	"io/fs"
+	"net"
 	"path/filepath"
 
 	yaml "gopkg.in/yaml.v2"
@@ -23,6 +24,25 @@ type Config struct {
 	Number int `yaml:"number"`
 	// Colo 机房白名单，空格分隔的 IATA 代码（如 "HKG NRT SIN"）；留空表示不过滤
 	Colo string `yaml:"colo"`
+
+	// PrimarySize 主选节点数，承载实际流量
+	PrimarySize int `yaml:"primary_size"`
+	// BackupSize 备用节点数，主选出现空缺时递补
+	BackupSize int `yaml:"backup_size"`
+	// Cooldown 节点被淘汰后的冷却时长（秒），冷却期内不参与补位
+	Cooldown int `yaml:"cooldown"`
+
+	// HealthInterval 健康检查周期（秒）
+	HealthInterval int `yaml:"health_interval"`
+	// PingTimes 每次健康检查对每个节点的采样次数
+	PingTimes int `yaml:"ping_times"`
+	// PingGap 同一次健康检查内相邻采样的间隔（毫秒）
+	PingGap int `yaml:"ping_gap"`
+	// LossLimit 丢包率上限，取值 0~1；为 0 表示不做该项判定
+	LossLimit float64 `yaml:"tlr"`
+
+	// ProxyListen 本地 SOCKS5 监听地址
+	ProxyListen string `yaml:"proxy_listen"`
 }
 
 func DefaultConfig() *Config {
@@ -32,8 +52,18 @@ func DefaultConfig() *Config {
 		Timeout:     500,
 		Number:      20,
 		Colo:        "",
-	}
 
+		PrimarySize: 10,
+		BackupSize:  5,
+		Cooldown:    300,
+
+		HealthInterval: 60,
+		PingTimes:      3,
+		PingGap:        200,
+		LossLimit:      0.1,
+
+		ProxyListen: "127.0.0.1:1234",
+	}
 }
 // ConfigDir 返回应用配置目录，目录不存在时自动创建
 func ConfigDir() (string, error) {
@@ -72,7 +102,31 @@ func (c *Config) Validate() error {
 		return errors.New("请求超时时间必须大于 0")
 	}
 	if c.Number <= 0 {
-		return errors.New("优选 IP 最大数必须大于 0")
+		return errors.New("达标 IP 数量必须大于 0")
+	}
+	if c.PrimarySize <= 0 {
+		return errors.New("主选节点数必须大于 0")
+	}
+	if c.BackupSize < 0 {
+		return errors.New("备用节点数不能为负")
+	}
+	if c.Cooldown < 0 {
+		return errors.New("冷却时长不能为负")
+	}
+	if c.HealthInterval <= 0 {
+		return errors.New("健康检查周期必须大于 0")
+	}
+	if c.PingTimes <= 0 {
+		return errors.New("采样次数必须大于 0")
+	}
+	if c.PingGap < 0 {
+		return errors.New("采样间隔不能为负")
+	}
+	if c.LossLimit <= 0 || c.LossLimit > 1 {
+		return errors.New("丢包率上限必须大于 0 且不超过 1")
+	}
+	if _, _, err := net.SplitHostPort(c.ProxyListen); err != nil {
+		return errors.New("监听地址格式不正确，应形如 127.0.0.1:1234")
 	}
 	return nil
 }
@@ -120,6 +174,15 @@ func LoadConfigFromPath() (*Config,error) {
 	if config1.Concurrency == 0 { config1.Concurrency = fallback.Concurrency }
 	if config1.Timeout == 0 { config1.Timeout = fallback.Timeout }
 	if config1.Number == 0 { config1.Number = fallback.Number }
+	// 数值项为 0 一律回落到默认：既兼容旧版配置文件缺字段，也避免无效取值
+	if config1.PrimarySize == 0 { config1.PrimarySize = fallback.PrimarySize }
+	if config1.BackupSize == 0 { config1.BackupSize = fallback.BackupSize }
+	if config1.Cooldown == 0 { config1.Cooldown = fallback.Cooldown }
+	if config1.HealthInterval == 0 { config1.HealthInterval = fallback.HealthInterval }
+	if config1.PingTimes == 0 { config1.PingTimes = fallback.PingTimes }
+	if config1.PingGap == 0 { config1.PingGap = fallback.PingGap }
+	if config1.LossLimit == 0 { config1.LossLimit = fallback.LossLimit }
+	if config1.ProxyListen == "" { config1.ProxyListen = fallback.ProxyListen }
 	cfg = &config1
 	return cfg,nil
 }

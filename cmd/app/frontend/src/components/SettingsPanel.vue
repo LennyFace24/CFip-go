@@ -36,6 +36,11 @@ function onColo(event: Event): void {
   commit()
 }
 
+function onProxyListen(event: Event): void {
+  local.value.proxyListen = (event.target as HTMLInputElement).value
+  commit()
+}
+
 function isColoOn(code: string): boolean {
   return splitColo(local.value.colo).includes(code.toUpperCase())
 }
@@ -45,16 +50,42 @@ function switchColo(code: string): void {
   commit()
 }
 
-const fields: {
-  key: keyof Omit<Config, 'path'>
+interface FieldDef {
+  key: keyof Omit<Config, 'path' | 'colo'>
   label: string
   hint: string
   unit: string
-}[] = [
-  { key: 'latency', label: '延迟上限', hint: '探测成功但延迟超过它算「超标」，不计入达标数量', unit: 'ms' },
-  { key: 'concurrency', label: '并发数', hint: '同时发起探测的协程数量，越大越快但占用更多资源', unit: '个' },
-  { key: 'timeout', label: '请求超时', hint: '单个 IP 探测的超时时间', unit: 'ms' },
-  { key: 'number', label: '达标 IP 数量', hint: '集满该数量的达标 IP 后自动停止测速', unit: '个' },
+  min: number
+  step: number
+}
+
+const sections: { title: string; fields: FieldDef[] }[] = [
+  {
+    title: '测速',
+    fields: [
+      { key: 'latency', label: '延迟上限', hint: '探测成功但延迟超过它算「超标」，不计入达标数量', unit: 'ms', min: 1, step: 10 },
+      { key: 'concurrency', label: '并发数', hint: '同时发起探测的协程数量，越大越快但占用更多资源', unit: '个', min: 1, step: 1 },
+      { key: 'timeout', label: '请求超时', hint: '单个 IP 探测的超时时间', unit: 'ms', min: 1, step: 100 },
+      { key: 'number', label: '达标 IP 数量', hint: '集满该数量的达标 IP 后自动停止测速', unit: '个', min: 1, step: 1 },
+    ],
+  },
+  {
+    title: 'IP 池',
+    fields: [
+      { key: 'primarySize', label: '主选节点数', hint: '承载实际流量的节点数量', unit: '个', min: 1, step: 1 },
+      { key: 'backupSize', label: '备用节点数', hint: '主选出现空缺时按延迟递补', unit: '个', min: 0, step: 1 },
+      { key: 'cooldown', label: '冷却时长', hint: '节点被淘汰后多久内不参与补位，用于防抖动', unit: '秒', min: 0, step: 30 },
+    ],
+  },
+  {
+    title: '健康检查',
+    fields: [
+      { key: 'healthInterval', label: '检查周期', hint: '多久对池中节点复测一轮', unit: '秒', min: 1, step: 10 },
+      { key: 'pingTimes', label: '每次采样次数', hint: '单个节点一轮内探测几次，用于算丢包率', unit: '次', min: 1, step: 1 },
+      { key: 'pingGap', label: '采样间隔', hint: '同一次检查内相邻两次探测的间隔', unit: 'ms', min: 0, step: 50 },
+      { key: 'lossLimit', label: '丢包率上限', hint: '取值大于 0 且不超过 1，例如 0.1 表示丢包 10% 即淘汰', unit: '', min: 0, step: 0.05 },
+    ],
+  },
 ]
 </script>
 
@@ -68,28 +99,51 @@ const fields: {
           />
         </svg>
         <div>
-          <h2>测速参数</h2>
+          <h2>参数设置</h2>
           <p class="card-sub">修改后需点击保存才会写入配置文件</p>
         </div>
       </div>
       <span v-if="props.dirty" class="chip warn">未保存</span>
     </header>
 
-    <div class="setting-list">
-      <div v-for="field in fields" :key="field.key" class="setting-item">
+    <div v-for="section in sections" :key="section.title" class="setting-group">
+      <h3 class="group-title">{{ section.title }}</h3>
+      <div class="setting-list">
+        <div v-for="field in section.fields" :key="field.key" class="setting-item">
+          <div class="setting-text">
+            <span class="setting-title">{{ field.label }}</span>
+            <span class="setting-desc">{{ field.hint }}</span>
+          </div>
+          <div class="setting-control">
+            <input
+              v-model.number="local[field.key]"
+              class="num"
+              type="number"
+              :min="field.min"
+              :step="field.step"
+              @change="commit"
+            />
+            <em v-if="field.unit">{{ field.unit }}</em>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <h3 class="group-title">代理</h3>
+      <div class="setting-item">
         <div class="setting-text">
-          <span class="setting-title">{{ field.label }}</span>
-          <span class="setting-desc">{{ field.hint }}</span>
+          <span class="setting-title">SOCKS5 监听地址</span>
+          <span class="setting-desc">本地代理监听地址，形如 127.0.0.1:1234</span>
         </div>
         <div class="setting-control">
           <input
-            v-model.number="local[field.key]"
-            class="num"
-            type="number"
-            min="1"
-            @change="commit"
+            class="input listen-input"
+            type="text"
+            :value="local.proxyListen"
+            placeholder="127.0.0.1:1234"
+            @change="onProxyListen"
           />
-          <em>{{ field.unit }}</em>
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import type * as main$0 from "../../../../LennyFace24/CFip-go/cmd/app/models.js"
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "pool:update": main$0.PoolSnapshot;
             "speed:done": main$0.SpeedSummary;
             "speed:result": main$0.SpeedResult;
         }

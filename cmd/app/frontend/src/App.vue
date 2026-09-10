@@ -3,12 +3,14 @@ import { computed, onMounted, ref } from 'vue'
 import TitleBar from './components/TitleBar.vue'
 import SideBar from './components/SideBar.vue'
 import SourcePanel from './components/SourcePanel.vue'
+import ProxyPanel from './components/ProxyPanel.vue'
 import ResultTable from './components/ResultTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ToastHost from './components/ToastHost.vue'
 import { useColo } from './composables/useColo'
 import { useConfig } from './composables/useConfig'
 import { useLog } from './composables/useLog'
+import { useProxy } from './composables/useProxy'
 import { useSource } from './composables/useSource'
 import { useSpeedTest } from './composables/useSpeedTest'
 import type { Tab } from './types'
@@ -62,17 +64,40 @@ const {
 
 const { exportRows, openDir } = useLog()
 const { recommended, load: loadColos } = useColo()
+const {
+  snapshot: pool,
+  starting: poolStarting,
+  subscribe: subscribePool,
+  refresh: refreshPool,
+  start: startPool,
+  stop: stopPool,
+} = useProxy()
 
-const subtitle = computed(() =>
-  tab.value === 'speed'
-    ? `当前 IP 源共 ${ipCount.value} 个待测 IP`
-    : `配置文件：${savedConfig.value.path || '（未加载）'}`,
-)
+const titles: Record<Tab, string> = {
+  speed: '优选 IP 测速',
+  proxy: 'IP 池',
+  settings: '设置',
+}
+
+const subtitle = computed(() => {
+  switch (tab.value) {
+    case 'speed':
+      return `当前 IP 源共 ${ipCount.value} 个待测 IP`
+    case 'proxy':
+      return pool.value.running
+        ? `主选 ${pool.value.primary.length} / ${pool.value.primaryTarget} · 备用 ${pool.value.backup.length} / ${pool.value.backupTarget}`
+        : '停止状态下池中节点保留，可随时重新启动'
+    default:
+      return `配置文件：${savedConfig.value.path || '（未加载）'}`
+  }
+})
 
 onMounted(async () => {
   subscribe()
+  subscribePool()
   await Promise.all([loadConfig(), initSource(), loadColos()])
 })
+
 </script>
 
 <template>
@@ -85,7 +110,7 @@ onMounted(async () => {
       <main class="main">
         <header class="topbar">
           <div>
-            <h1>{{ tab === 'speed' ? '优选 IP 测速' : '设置' }}</h1>
+            <h1>{{ titles[tab] }}</h1>
             <p class="sub">{{ subtitle }}</p>
           </div>
           <span v-if="running" class="chip live"><i class="dot" />测速中</span>
@@ -126,6 +151,18 @@ onMounted(async () => {
               @copy-one="copyOne"
               @export="exportRows(rows, savedConfig.latency)"
               @open-dir="openDir"
+            />
+          </div>
+
+          <div v-else-if="tab === 'proxy'" key="proxy" class="content">
+            <ProxyPanel
+              :snapshot="pool"
+              :ip-count="ipCount"
+              :starting="poolStarting"
+              :disabled="running"
+              @start="startPool(sourceText)"
+              @stop="stopPool"
+              @refresh="refreshPool"
             />
           </div>
 

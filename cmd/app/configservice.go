@@ -7,13 +7,26 @@ import (
 )
 
 // ConfigDTO 是给前端用的配置视图，字段与 config.Config 一一对应。
+// Path 只读，Save 会忽略它。
 type ConfigDTO struct {
 	Latency     int
 	Concurrency int
 	Timeout     int
 	Number      int
 	Colo        string
-	Path        string
+
+	PrimarySize int
+	BackupSize  int
+	Cooldown    int
+
+	HealthInterval int
+	PingTimes      int
+	PingGap        int
+	LossLimit      float64
+
+	ProxyListen string
+
+	Path string
 }
 
 // ConfigService 向前端暴露配置的读取与保存能力。
@@ -30,13 +43,24 @@ func (c *ConfigService) Get() (ConfigDTO, error) {
 }
 
 // Save 校验并写入配置。任一项不合法时返回错误，不落盘。
-func (c *ConfigService) Save(latency, concurrency, timeout, number int, colo string) error {
+func (c *ConfigService) Save(input ConfigDTO) error {
 	cfg := &config.Config{
-		Latency:     latency,
-		Concurrency: concurrency,
-		Timeout:     timeout,
-		Number:      number,
-		Colo:        strings.TrimSpace(colo),
+		Latency:     input.Latency,
+		Concurrency: input.Concurrency,
+		Timeout:     input.Timeout,
+		Number:      input.Number,
+		Colo:        strings.TrimSpace(input.Colo),
+
+		PrimarySize: input.PrimarySize,
+		BackupSize:  input.BackupSize,
+		Cooldown:    input.Cooldown,
+
+		HealthInterval: input.HealthInterval,
+		PingTimes:      input.PingTimes,
+		PingGap:        input.PingGap,
+		LossLimit:      input.LossLimit,
+
+		ProxyListen: input.ProxyListen,
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -59,6 +83,18 @@ func toDTO(cfg *config.Config, path string) ConfigDTO {
 		Timeout:     cfg.Timeout,
 		Number:      cfg.Number,
 		Colo:        cfg.Colo,
-		Path:        path,
+
+		PrimarySize: cfg.PrimarySize,
+		BackupSize:  cfg.BackupSize,
+		Cooldown:    cfg.Cooldown,
+
+		HealthInterval: cfg.HealthInterval,
+		PingTimes:      cfg.PingTimes,
+		PingGap:        cfg.PingGap,
+		LossLimit:      cfg.LossLimit,
+
+		ProxyListen: cfg.ProxyListen,
+
+		Path: path,
 	}
 }

@@ -622,6 +622,46 @@ tbody tr:hover .icon-btn { opacity: 1; }
 .setting-control { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .setting-control em { color: var(--text-faint); font-style: normal; font-size: 12px; }
 
+/* 行内提示文字，用于补充说明当前状态 */
+.hint-text { color: var(--text-faint); font-size: 12px; }
+.warn-text { color: var(--warn); font-size: 12px; }
+
+/* 淘汰记录 */
+.evict-log { display: flex; flex-direction: column; gap: 9px; }
+
+.evict-log ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.evict-log li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12.5px;
+    padding: 6px 10px;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+}
+
+.evict-log li .dim:last-child { margin-left: auto; }
+
+.setting-group { display: flex; flex-direction: column; gap: 9px; }
+
+.group-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-faint);
+    letter-spacing: 0.4px;
+}
+
 /* 机房白名单：说明 + 输入框 + 快捷 chip */
 .colo-block {
     display: flex;
@@ -632,6 +672,12 @@ tbody tr:hover .icon-btn { opacity: 1; }
 }
 
 .colo-input { width: 100%; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.listen-input {
+    width: 190px;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 
 /* ===========================  Toast  =========================== */
 .toast-host {

@@ -35,6 +35,7 @@ export interface ColoOption {
 
 /**
  * ConfigDTO 是给前端用的配置视图，字段与 config.Config 一一对应。
+ * Path 只读，Save 会忽略它。
  */
 export interface ConfigDTO {
     "Latency": number;
@@ -42,7 +43,28 @@ export interface ConfigDTO {
     "Timeout": number;
     "Number": number;
     "Colo": string;
+    "PrimarySize": number;
+    "BackupSize": number;
+    "Cooldown": number;
+    "HealthInterval": number;
+    "PingTimes": number;
+    "PingGap": number;
+    "LossLimit": number;
+    "ProxyListen": string;
     "Path": string;
+}
+
+/**
+ * EvictionRecord 一条淘汰记录
+ */
+export interface EvictionRecord {
+    "IP": string;
+    "Reason": string;
+
+    /**
+     * Unix 毫秒
+     */
+    "Time": number;
 }
 
 /**
@@ -63,6 +85,46 @@ export interface ImportResult {
      * 解析出的 IP 数量
      */
     "Count": number;
+}
+
+/**
+ * PoolNode 池中的一个节点视图。Latency 单位为毫秒。
+ */
+export interface PoolNode {
+    "IP": string;
+    "Colo": string;
+
+    /**
+     * < 0 表示该轮全部失败
+     */
+    "Latency": number;
+    "LossRate": number;
+    "Samples": number;
+    "FailStreak": number;
+
+    /**
+     * Unix 毫秒
+     */
+    "UpdatedAt": number;
+}
+
+/**
+ * PoolSnapshot 池的完整快照，前端据此整体刷新界面
+ */
+export interface PoolSnapshot {
+    "Running": boolean;
+    "PrimaryTarget": number;
+    "BackupTarget": number;
+
+    /**
+     * 本地 SOCKS5 监听地址；空串表示未监听
+     */
+    "ListenAddr": string;
+    "ListenError": string;
+    "ActiveConns": number;
+    "Primary": PoolNode[] | null;
+    "Backup": PoolNode[] | null;
+    "Evictions": EvictionRecord[] | null;
 }
 
 /**

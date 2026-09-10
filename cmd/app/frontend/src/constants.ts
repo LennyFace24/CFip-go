@@ -8,6 +8,17 @@ export const DEFAULT_CONFIG = {
   number: 20,
   /** 机房白名单，空格分隔；空串表示不过滤 */
   colo: '',
+  /** IP 池 */
+  primarySize: 10,
+  backupSize: 5,
+  cooldown: 300,
+  /** 健康检查 */
+  healthInterval: 60,
+  pingTimes: 3,
+  pingGap: 200,
+  lossLimit: 0.1,
+  /** 本地 SOCKS5 监听地址 */
+  proxyListen: '127.0.0.1:1234',
 } as const
 
 /** 网段采样数默认值与取值范围 */

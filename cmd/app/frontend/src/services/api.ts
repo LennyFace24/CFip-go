@@ -12,6 +12,7 @@ import {
   ConfigService,
   IPService,
   LogService,
+  ProxyService,
   SpeedService,
 } from '../../bindings/github.com/LennyFace24/CFip-go/cmd/app'
 import type {
@@ -21,8 +22,14 @@ import type {
   ColoOptionDTO,
   Config,
   ConfigDTO,
+  EvictionRecord,
+  EvictionRecordDTO,
   ImportResult,
   ImportResultDTO,
+  PoolNode,
+  PoolNodeDTO,
+  PoolSnapshot,
+  PoolSnapshotDTO,
 } from '../types'
 
 function toConfig(dto: ConfigDTO): Config {
@@ -32,7 +39,74 @@ function toConfig(dto: ConfigDTO): Config {
     timeout: dto.Timeout,
     number: dto.Number,
     colo: dto.Colo ?? '',
+
+    primarySize: dto.PrimarySize,
+    backupSize: dto.BackupSize,
+    cooldown: dto.Cooldown,
+
+    healthInterval: dto.HealthInterval,
+    pingTimes: dto.PingTimes,
+    pingGap: dto.PingGap,
+    lossLimit: dto.LossLimit,
+
+    proxyListen: dto.ProxyListen ?? '',
+
     path: dto.Path,
+  }
+}
+
+// 绑定的 Save 接收 Go 形状的配置，需要做一次字段转换
+function toConfigDTO(config: Config): ConfigDTO {
+  return {
+    Latency: config.latency,
+    Concurrency: config.concurrency,
+    Timeout: config.timeout,
+    Number: config.number,
+    Colo: config.colo,
+
+    PrimarySize: config.primarySize,
+    BackupSize: config.backupSize,
+    Cooldown: config.cooldown,
+
+    HealthInterval: config.healthInterval,
+    PingTimes: config.pingTimes,
+    PingGap: config.pingGap,
+    LossLimit: config.lossLimit,
+
+    ProxyListen: config.proxyListen,
+
+    Path: config.path,
+  }
+}
+
+function toPoolNode(dto: PoolNodeDTO): PoolNode {
+  return {
+    ip: dto.IP,
+    colo: dto.Colo ?? '',
+    latency: dto.Latency,
+    lossRate: dto.LossRate,
+    samples: dto.Samples,
+    failStreak: dto.FailStreak,
+    updatedAt: dto.UpdatedAt,
+  }
+}
+
+function toEviction(dto: EvictionRecordDTO): EvictionRecord {
+  return { ip: dto.IP, reason: dto.Reason, time: dto.Time }
+}
+
+/** 供事件回调复用：把 pool:update 的负载转成领域模型 */
+export function toPoolSnapshot(dto: PoolSnapshotDTO): PoolSnapshot {
+  return {
+    running: Boolean(dto.Running),
+    primaryTarget: dto.PrimaryTarget,
+    backupTarget: dto.BackupTarget,
+    listenAddr: dto.ListenAddr ?? '',
+    listenError: dto.ListenError ?? '',
+    activeConns: dto.ActiveConns ?? 0,
+    primary: (dto.Primary ?? []).map(toPoolNode),
+    backup: (dto.Backup ?? []).map(toPoolNode),
+    evictions: (dto.Evictions ?? []).map(toEviction),
   }
 }
 
@@ -45,13 +119,7 @@ export const api = {
 
     /** 校验并写入配置 */
     async save(config: Config): Promise<void> {
-      await ConfigService.Save(
-        config.latency,
-        config.concurrency,
-        config.timeout,
-        config.number,
-        config.colo,
-      )
+      await ConfigService.Save(toConfigDTO(config))
     },
 
     /** 内置默认配置 */
@@ -113,6 +181,23 @@ export const api = {
     /** 用系统文件管理器打开日志目录 */
     async openDir(): Promise<void> {
       await LogService.OpenDir()
+    },
+  },
+
+  proxy: {
+    /** 扫描并填满 IP 池，随后转入周期健康检查 */
+    async startPool(text: string): Promise<void> {
+      await ProxyService.StartPool(text)
+    },
+
+    /** 停止扫描与健康检查 */
+    async stopPool(): Promise<void> {
+      await ProxyService.StopPool()
+    },
+
+    /** 读取当前池快照 */
+    async snapshot(): Promise<PoolSnapshot> {
+      return toPoolSnapshot((await ProxyService.Snapshot()) as PoolSnapshotDTO)
     },
   },
 

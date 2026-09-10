@@ -14,14 +14,16 @@ func init() {
 	// 注册自定义事件，绑定生成器会据此产出强类型的 TS API。
 	application.RegisterEvent[SpeedResult]("speed:result")
 	application.RegisterEvent[SpeedSummary]("speed:done")
+	application.RegisterEvent[PoolSnapshot]("pool:update")
 }
 
-// main 初始化应用：装配三个服务、创建主窗口并启动事件循环。
+// main 初始化应用：装配服务、创建主窗口并启动事件循环。
 func main() {
 	configService := &ConfigService{}
 	ipService := &IPService{}
 	speedService := &SpeedService{}
 	logService := &LogService{}
+	proxyService := &ProxyService{}
 
 	app := application.New(application.Options{
 		Name:        "CFip",
@@ -31,6 +33,7 @@ func main() {
 			application.NewService(ipService),
 			application.NewService(speedService),
 			application.NewService(logService),
+			application.NewService(proxyService),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -44,6 +47,7 @@ func main() {
 	ipService.app = app
 	speedService.app = app
 	logService.app = app
+	proxyService.app = app
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "CFip · Cloudflare 优选 IP",

@@ -4,11 +4,13 @@
 import * as ConfigService from "./configservice.js";
 import * as IPService from "./ipservice.js";
 import * as LogService from "./logservice.js";
+import * as ProxyService from "./proxyservice.js";
 import * as SpeedService from "./speedservice.js";
 export {
     ConfigService,
     IPService,
     LogService,
+    ProxyService,
     SpeedService
 };
 
@@ -16,7 +18,10 @@ export type {
     CIDRSource,
     ColoOption,
     ConfigDTO,
+    EvictionRecord,
     ImportResult,
+    PoolNode,
+    PoolSnapshot,
     SpeedResult,
     SpeedSummary
 } from "./models.js";
