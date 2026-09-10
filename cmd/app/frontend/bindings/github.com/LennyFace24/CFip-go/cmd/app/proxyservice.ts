@@ -16,6 +16,13 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * Recheck 立即对池中节点复测一轮，不等下一个周期。
+ */
+export function Recheck(): $CancellablePromise<void> {
+    return $Call.ByID(124837276);
+}
+
+/**
  * Snapshot 返回当前池的快照
  */
 export function Snapshot(): $CancellablePromise<$models.PoolSnapshot> {

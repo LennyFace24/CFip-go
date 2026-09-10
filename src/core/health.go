@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// minSamplesForEviction 累积多少轮检查后才允许判定，给新入池的节点留出保护期
+const minSamplesForEviction = 3
+
 // HealthConfig 健康检查参数。延迟单位为秒，与 core 其余部分一致。
 type HealthConfig struct {
 	Interval        time.Duration // 检查周期，必须大于 0
@@ -22,7 +25,16 @@ type Evicted struct {
 	Reason string
 }
 
-// HealthChecker 周期性复测池中节点，淘汰劣化的并由备用递补。
+type actionKind int
+
+const (
+	actionNone actionKind = iota
+	actionRecover
+	actionIsolate
+	actionRemove
+)
+
+// HealthChecker 周期性复测池中节点：达标的解除隔离，超限的先隔离后移除。
 type HealthChecker struct {
 	pool  *Pool
 	cfg   HealthConfig
@@ -33,9 +45,10 @@ func NewHealthChecker(pool *Pool, cfg HealthConfig, probe ProbeLatency) *HealthC
 	return &HealthChecker{pool: pool, cfg: cfg, probe: probe}
 }
 
-// CheckOnce 对池中每个节点采样一次，刷新统计并淘汰劣化的，返回淘汰明细。
+// CheckOnce 对池中每个节点采样一次，按结果隔离、恢复或淘汰，返回淘汰明细。
 //
-// 淘汰后主选出现的空缺由备用中延迟最低者递补。
+// 超限的节点不会立即移除：先隔离观察，下一轮仍不达标才淘汰。
+// 每次淘汰都要通过容量闸门，避免把可用节点清空。
 func (h *HealthChecker) CheckOnce(ctx context.Context) []Evicted {
 	var evicted []Evicted
 
@@ -51,13 +64,20 @@ func (h *HealthChecker) CheckOnce(ctx context.Context) []Evicted {
 		if !ok {
 			continue
 		}
-		reason := h.reason(sample, current)
-		if reason == "" {
-			continue
-		}
 
-		evicted = append(evicted, Evicted{Node: current, Reason: reason})
-		h.pool.Remove(node.IP)
+		action, reason := h.decide(sample, current)
+		switch action {
+		case actionRecover:
+			h.pool.Recover(node.IP)
+		case actionIsolate:
+			h.pool.Isolate(node.IP)
+		case actionRemove:
+			if !h.pool.TryEvict() {
+				continue // 容量已触底，保留节点
+			}
+			evicted = append(evicted, Evicted{Node: current, Reason: reason})
+			h.pool.Remove(node.IP)
+		}
 	}
 
 	for i := 0; i < len(evicted); i++ {
@@ -72,10 +92,8 @@ func (h *HealthChecker) CheckOnce(ctx context.Context) []Evicted {
 // 每轮检查结束后才开始计下一轮，避免检查耗时超过周期时堆积。
 func (h *HealthChecker) Run(ctx context.Context, onEvicted func([]Evicted)) {
 	report := func() {
-		if onEvicted == nil {
-			return
-		}
-		if evicted := h.CheckOnce(ctx); len(evicted) > 0 {
+		evicted := h.CheckOnce(ctx)
+		if onEvicted != nil && len(evicted) > 0 {
 			onEvicted(evicted)
 		}
 	}
@@ -99,23 +117,51 @@ func (h *HealthChecker) Run(ctx context.Context, onEvicted func([]Evicted)) {
 	}
 }
 
-// reason 判定节点是否应被淘汰，返回空串表示保留。
-func (h *HealthChecker) reason(sample SampleResult, node Node) string {
-	if h.cfg.FailStreakLimit > 0 && node.FailStreak >= h.cfg.FailStreakLimit {
-		return "连续失败"
+// decide 判定节点该采取什么动作。
+func (h *HealthChecker) decide(sample SampleResult, node Node) (actionKind, string) {
+	// 机房不符：直接移除，与样本数无关
+	if sample.Success > 0 && !ColoAllowed(sample.Colo, h.cfg.ColoWhitelist) {
+		return actionRemove, "机房不符"
 	}
+
+	// 样本不足：不判定，避免刚入池就被误杀
+	if node.Samples < minSamplesForEviction {
+		return actionNone, ""
+	}
+
+	reason := h.overLimitReason(sample, node)
+	if reason == "" {
+		return actionRecover, ""
+	}
+	if node.Isolated {
+		return actionRemove, reason + "（隔离后仍不达标）"
+	}
+	return actionIsolate, reason
+}
+
+// overLimitReason 返回超限原因，未超限返回空串。
+func (h *HealthChecker) overLimitReason(sample SampleResult, node Node) string {
 	if sample.Success == 0 {
-		// 整轮失败交给 FailStreak 判定，避免单次抖动就误杀
+		if h.cfg.FailStreakLimit > 0 && node.FailStreak >= h.cfg.FailStreakLimit {
+			return "连续无响应"
+		}
+		if h.cfg.LossLimit > 0 && node.LossRate > h.cfg.LossLimit {
+			return "丢包率超限"
+		}
 		return ""
 	}
-	if h.cfg.LossLimit > 0 && sample.LossRate > h.cfg.LossLimit {
-		return "丢包率超限"
-	}
-	if h.cfg.LatencyLimit > 0 && sample.AvgLatency > h.cfg.LatencyLimit {
+
+	delayOver := h.cfg.LatencyLimit > 0 && node.AvgLatency > h.cfg.LatencyLimit
+	lossOver := h.cfg.LossLimit > 0 && node.LossRate > h.cfg.LossLimit
+
+	switch {
+	case delayOver && lossOver:
+		return "延迟与丢包率均超限"
+	case delayOver:
 		return "延迟超限"
+	case lossOver:
+		return "丢包率超限"
+	default:
+		return ""
 	}
-	if !ColoAllowed(sample.Colo, h.cfg.ColoWhitelist) {
-		return "机房不符"
-	}
-	return ""
 }

@@ -88,19 +88,20 @@ export interface ImportResult {
 }
 
 /**
- * PoolNode 池中的一个节点视图。Latency 单位为毫秒。
+ * PoolNode 池中的一个节点视图。Latency 单位为毫秒，取最近一轮采样结果。
  */
 export interface PoolNode {
     "IP": string;
     "Colo": string;
 
     /**
-     * < 0 表示该轮全部失败
+     * 最近一轮采样的均值；该轮全失败时保留上一次的值
      */
     "Latency": number;
     "LossRate": number;
     "Samples": number;
     "FailStreak": number;
+    "Isolated": boolean;
 
     /**
      * Unix 毫秒

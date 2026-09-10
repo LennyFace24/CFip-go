@@ -11,7 +11,7 @@ const props = defineProps<{
   disabled: boolean
 }>()
 
-const emit = defineEmits<{ start: []; stop: []; refresh: [] }>()
+const emit = defineEmits<{ start: []; stop: []; recheck: [] }>()
 
 function formatLatency(value: number): string {
   return value >= 0 ? value.toFixed(1) : '—'
@@ -41,7 +41,7 @@ function formatTime(ms: number): string {
         <div>
           <h2>IP 池</h2>
           <p class="card-sub">
-            扫描达标节点入池，并按配置周期复测；劣化节点自动淘汰、由备用递补
+            扫描达标节点入池并周期复测；超限节点先隔离观察，仍不达标才淘汰并补测新 IP
           </p>
         </div>
       </div>
@@ -65,7 +65,9 @@ function formatTime(ms: number): string {
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z" /></svg>
         停止
       </button>
-      <button class="btn ghost" @click="emit('refresh')">刷新</button>
+      <button class="btn ghost" :disabled="!snapshot.running" @click="emit('recheck')">
+        立即复测
+      </button>
       <span class="hint-text">
         候选来源：{{ ipCount }} 个 IP<span v-if="!ipCount">（请先在测速页导入或加载内置网段）</span>
       </span>
@@ -100,7 +102,10 @@ function formatTime(ms: number): string {
         </thead>
         <tbody>
           <tr v-for="node in snapshot.primary" :key="`p-${node.ip}`">
-            <td><span class="tag qualified">主选</span></td>
+            <td>
+              <span v-if="node.isolated" class="tag over">隔离</span>
+              <span v-else class="tag qualified">主选</span>
+            </td>
             <td class="mono">{{ node.ip }}</td>
             <td class="mono dim">{{ node.colo || '—' }}</td>
             <td class="num-col mono">{{ formatLatency(node.latency) }}</td>
@@ -109,7 +114,10 @@ function formatTime(ms: number): string {
             <td class="dim">{{ formatTime(node.updatedAt) }}</td>
           </tr>
           <tr v-for="node in snapshot.backup" :key="`b-${node.ip}`">
-            <td><span class="tag excluded">备用</span></td>
+            <td>
+              <span v-if="node.isolated" class="tag over">隔离</span>
+              <span v-else class="tag excluded">备用</span>
+            </td>
             <td class="mono">{{ node.ip }}</td>
             <td class="mono dim">{{ node.colo || '—' }}</td>
             <td class="num-col mono">{{ formatLatency(node.latency) }}</td>

@@ -122,6 +122,8 @@ export interface PoolNode {
   samples: number
   /** 连续「整轮失败」次数 */
   failStreak: number
+  /** 隔离观察中：仍在池内，但不参与流量分发 */
+  isolated: boolean
   /** 最后更新时间，Unix 毫秒 */
   updatedAt: number
 }
@@ -214,6 +216,7 @@ export interface PoolNodeDTO {
   LossRate: number
   Samples: number
   FailStreak: number
+  Isolated: boolean
   UpdatedAt: number
 }
 

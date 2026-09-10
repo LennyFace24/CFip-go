@@ -13,10 +13,10 @@ export const DEFAULT_CONFIG = {
   backupSize: 5,
   cooldown: 300,
   /** 健康检查 */
-  healthInterval: 60,
-  pingTimes: 3,
+  healthInterval: 30,
+  pingTimes: 5,
   pingGap: 200,
-  lossLimit: 0.1,
+  lossLimit: 0.25,
   /** 本地 SOCKS5 监听地址 */
   proxyListen: '127.0.0.1:1234',
 } as const

@@ -87,6 +87,7 @@ function toPoolNode(dto: PoolNodeDTO): PoolNode {
     lossRate: dto.LossRate,
     samples: dto.Samples,
     failStreak: dto.FailStreak,
+    isolated: Boolean(dto.Isolated),
     updatedAt: dto.UpdatedAt,
   }
 }
@@ -193,6 +194,11 @@ export const api = {
     /** 停止扫描与健康检查 */
     async stopPool(): Promise<void> {
       await ProxyService.StopPool()
+    },
+
+    /** 立即对池中节点复测一轮，不等下一个周期 */
+    async recheck(): Promise<void> {
+      await ProxyService.Recheck()
     },
 
     /** 读取当前池快照 */

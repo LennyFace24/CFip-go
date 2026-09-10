@@ -38,7 +38,8 @@ type Config struct {
 	PingTimes int `yaml:"ping_times"`
 	// PingGap 同一次健康检查内相邻采样的间隔（毫秒）
 	PingGap int `yaml:"ping_gap"`
-	// LossLimit 丢包率上限，取值 0~1；为 0 表示不做该项判定
+	// LossLimit 丢包率上限，取值 0~1。
+	// 注意与 PingTimes 配套：采样 5 次时 0.25 表示允许其中 1 次失败。
 	LossLimit float64 `yaml:"tlr"`
 
 	// ProxyListen 本地 SOCKS5 监听地址
@@ -57,10 +58,10 @@ func DefaultConfig() *Config {
 		BackupSize:  5,
 		Cooldown:    300,
 
-		HealthInterval: 60,
-		PingTimes:      3,
+		HealthInterval: 30,
+		PingTimes:      5,
 		PingGap:        200,
-		LossLimit:      0.1,
+		LossLimit:      0.25,
 
 		ProxyListen: "127.0.0.1:1234",
 	}

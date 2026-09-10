@@ -68,9 +68,9 @@ const {
   snapshot: pool,
   starting: poolStarting,
   subscribe: subscribePool,
-  refresh: refreshPool,
   start: startPool,
   stop: stopPool,
+  recheck: recheckPool,
 } = useProxy()
 
 const titles: Record<Tab, string> = {
@@ -162,7 +162,7 @@ onMounted(async () => {
               :disabled="running"
               @start="startPool(sourceText)"
               @stop="stopPool"
-              @refresh="refreshPool"
+              @recheck="recheckPool"
             />
           </div>
 

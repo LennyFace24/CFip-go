@@ -11,30 +11,39 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// failStreakLimit 连续「整轮失败」多少次才淘汰节点。
-// 不进配置：它只影响淘汰的保守程度，用户无需感知。
-const failStreakLimit = 3
+const (
+	// failStreakLimit 连续「整轮失败」多少次才算超限。
+	// 不进配置：它只影响淘汰的保守程度，用户无需感知。
+	failStreakLimit = 3
 
-// maxEvictionLog 保留的最近淘汰记录条数
-const maxEvictionLog = 20
+	// maxEvictionLog 保留的最近淘汰记录条数
+	maxEvictionLog = 20
 
-// poolUpdateThrottle 扫描阶段推送快照的最小间隔，避免每个 IP 都触发一次刷新
-const poolUpdateThrottle = 200 * time.Millisecond
+	// scanBatch 每批从候选队列取多少个 IP 去探测
+	scanBatch = 200
 
-// statsRefreshInterval 运行期的定期快照间隔，用于刷新活跃连接数等实时指标
-const statsRefreshInterval = 2 * time.Second
+	// maxScanRounds 候选耗尽后最多再循环几轮，避免无休止重扫
+	maxScanRounds = 2
 
-// listenReadyTimeout 等待监听绑定完成的时长上限
-const listenReadyTimeout = time.Second
+	// poolUpdateThrottle 扫描阶段推送快照的最小间隔
+	poolUpdateThrottle = 200 * time.Millisecond
 
-// PoolNode 池中的一个节点视图。Latency 单位为毫秒。
+	// statsRefreshInterval 运行期的定期快照间隔，刷新活跃连接数等实时指标
+	statsRefreshInterval = 2 * time.Second
+
+	// listenReadyTimeout 等待监听绑定完成的时长上限
+	listenReadyTimeout = time.Second
+)
+
+// PoolNode 池中的一个节点视图。Latency 单位为毫秒，取最近一轮采样结果。
 type PoolNode struct {
 	IP         string
 	Colo       string
-	Latency    float64 // < 0 表示该轮全部失败
+	Latency    float64 // 最近一轮采样的均值；该轮全失败时保留上一次的值
 	LossRate   float64
 	Samples    int
 	FailStreak int
+	Isolated   bool
 	UpdatedAt  int64 // Unix 毫秒
 }
 
@@ -58,18 +67,52 @@ type PoolSnapshot struct {
 	Evictions     []EvictionRecord
 }
 
+// candidateQueue 候选 IP 队列，按顺序取用，耗尽后可回到队首重新扫。
+type candidateQueue struct {
+	mu    sync.Mutex
+	items []core.IP
+	next  int
+}
+
+func newCandidateQueue(items []core.IP) *candidateQueue {
+	return &candidateQueue{items: items}
+}
+
+// take 取下一批候选；已取完返回 nil。
+func (q *candidateQueue) take(size int) []core.IP {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.next >= len(q.items) {
+		return nil
+	}
+	end := min(q.next+size, len(q.items))
+	batch := q.items[q.next:end]
+	q.next = end
+	return batch
+}
+
+// rewind 回到队首，用于候选耗尽后重新扫描。
+func (q *candidateQueue) rewind() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.next = 0
+}
+
 // ProxyService 构建并长期维护 IP 池，并在池有节点后开启本地 SOCKS5 转发。
 // 与 SpeedService（一次性测速）相互独立。
 type ProxyService struct {
-	app           *application.App
-	mu            sync.Mutex
-	pool          *core.Pool
-	forwarder     *core.Forwarder
-	cancel        context.CancelFunc
-	evicts        []EvictionRecord
-	listenErr     string
-	primaryTarget int
-	backupTarget  int
+	app        *application.App
+	mu         sync.Mutex
+	pool       *core.Pool
+	forwarder  *core.Forwarder
+	checker    *core.HealthChecker
+	candidates *candidateQueue
+	cfg        *config.Config
+	cancel     context.CancelFunc
+	trigger    chan struct{}
+	evicts     []EvictionRecord
+	listenErr  string
 }
 
 func (s *ProxyService) ServiceName() string { return "ProxyService" }
@@ -98,17 +141,20 @@ func (s *ProxyService) StartPool(text string) error {
 	s.evicts = nil
 	s.listenErr = ""
 	s.forwarder = nil
-	s.primaryTarget = cfg.PrimarySize
-	s.backupTarget = cfg.BackupSize
+	s.checker = nil
+	s.trigger = make(chan struct{}, 1)
+	s.cfg = cfg
 	s.pool = core.NewPool(core.PoolConfig{
 		PrimarySize: cfg.PrimarySize,
 		BackupSize:  cfg.BackupSize,
 		Cooldown:    time.Duration(cfg.Cooldown) * time.Second,
 	})
+	s.candidates = newCandidateQueue(ips)
 	pool := s.pool
+	candidates := s.candidates
 	s.mu.Unlock()
 
-	go s.run(ctx, pool, ips, cfg)
+	go s.run(ctx, pool, candidates, cfg)
 	return nil
 }
 
@@ -125,6 +171,23 @@ func (s *ProxyService) StopPool() {
 	s.emitUpdate()
 }
 
+// Recheck 立即对池中节点复测一轮，不等下一个周期。
+func (s *ProxyService) Recheck() error {
+	s.mu.Lock()
+	trigger := s.trigger
+	running := s.cancel != nil
+	s.mu.Unlock()
+
+	if !running || trigger == nil {
+		return errors.New("IP 池未在运行")
+	}
+	select {
+	case trigger <- struct{}{}:
+	default: // 已有待处理的复测请求
+	}
+	return nil
+}
+
 // Snapshot 返回当前池的快照
 func (s *ProxyService) Snapshot() PoolSnapshot {
 	s.mu.Lock()
@@ -136,8 +199,8 @@ func (s *ProxyService) Snapshot() PoolSnapshot {
 	primary, backup := s.pool.Snapshot()
 	snapshot := PoolSnapshot{
 		Running:       s.cancel != nil,
-		PrimaryTarget: s.primaryTarget,
-		BackupTarget:  s.backupTarget,
+		PrimaryTarget: primaryTarget(s.cfg),
+		BackupTarget:  backupTarget(s.cfg),
 		ListenError:   s.listenErr,
 		Primary:       toPoolNodes(primary),
 		Backup:        toPoolNodes(backup),
@@ -150,41 +213,142 @@ func (s *ProxyService) Snapshot() PoolSnapshot {
 	return snapshot
 }
 
-func (s *ProxyService) run(ctx context.Context, pool *core.Pool, ips []core.IP, cfg *config.Config) {
+func (s *ProxyService) run(ctx context.Context, pool *core.Pool, candidates *candidateQueue, cfg *config.Config) {
 	defer func() {
 		s.mu.Lock()
 		s.cancel = nil
 		s.forwarder = nil
+		s.checker = nil
+		s.trigger = nil
 		s.mu.Unlock()
 		s.emitUpdate()
 	}()
 
-	s.scan(ctx, pool, ips, cfg)
+	// 首轮：把候选扫一遍，填满池
+	s.scanFromCursor(ctx, pool, candidates, cfg)
 	if ctx.Err() != nil {
 		return
 	}
 
 	s.startForwarder(ctx, pool, cfg.ProxyListen)
+
+	checker := core.NewHealthChecker(pool, healthConfigFrom(cfg), nil)
+	trigger := make(chan struct{}, 1)
+
+	s.mu.Lock()
+	s.checker = checker
+	s.trigger = trigger
+	s.mu.Unlock()
+
 	go s.emitPeriodically(ctx)
 
-	checker := core.NewHealthChecker(pool, core.HealthConfig{
-		Interval:        time.Duration(cfg.HealthInterval) * time.Second,
-		Times:           cfg.PingTimes,
-		Gap:             time.Duration(cfg.PingGap) * time.Millisecond,
-		LossLimit:       cfg.LossLimit,
-		LatencyLimit:    float64(cfg.Latency) / 1000,
-		FailStreakLimit: failStreakLimit,
-		ColoWhitelist:   core.SplitColos(cfg.Colo),
-	}, nil)
-
 	s.emitUpdate()
-	checker.Run(ctx, func(evicted []core.Evicted) {
+	s.runHealthLoop(ctx, pool, candidates, checker, cfg, trigger)
+}
+
+// runHealthLoop 周期复测；收到 trigger 时立即复测一次。
+// 使用 Timer 而非 Ticker：每轮结束后才计下一轮，避免检查耗时超过周期时堆积。
+func (s *ProxyService) runHealthLoop(
+	ctx context.Context,
+	pool *core.Pool,
+	candidates *candidateQueue,
+	checker *core.HealthChecker,
+	cfg *config.Config,
+	trigger <-chan struct{},
+) {
+	interval := time.Duration(cfg.HealthInterval) * time.Second
+	if interval <= 0 {
+		interval = time.Minute
+	}
+
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		case <-trigger:
+		}
+		s.checkAndRefill(ctx, pool, candidates, checker, cfg)
+		timer.Reset(interval)
+	}
+}
+
+// checkAndRefill 执行一轮健康检查，记录淘汰并在池出现空缺时补测。
+func (s *ProxyService) checkAndRefill(
+	ctx context.Context,
+	pool *core.Pool,
+	candidates *candidateQueue,
+	checker *core.HealthChecker,
+	cfg *config.Config,
+) {
+	evicted := checker.CheckOnce(ctx)
+	if len(evicted) > 0 {
 		now := time.Now().UnixMilli()
 		for _, item := range evicted {
 			s.appendEviction(EvictionRecord{IP: item.Node.IP, Reason: item.Reason, Time: now})
 		}
-		s.emitUpdate()
-	})
+	}
+
+	if pool.NeedsMore() && ctx.Err() == nil {
+		s.refill(ctx, pool, candidates, cfg)
+	}
+	s.emitUpdate()
+}
+
+// scanFromCursor 从候选游标处继续扫描，直到候选耗尽或池不再缺节点。
+func (s *ProxyService) scanFromCursor(ctx context.Context, pool *core.Pool, candidates *candidateQueue, cfg *config.Config) {
+	lastEmit := time.Now()
+
+	for ctx.Err() == nil && pool.NeedsMore() {
+		batch := candidates.take(scanBatch)
+		if len(batch) == 0 {
+			return
+		}
+		s.probeAndFill(ctx, pool, batch, cfg)
+		if time.Since(lastEmit) >= poolUpdateThrottle {
+			s.emitUpdate()
+			lastEmit = time.Now()
+		}
+	}
+	s.emitUpdate()
+}
+
+// refill 淘汰后补位：先用没测过的候选，候选耗尽则回到队首重新扫。
+func (s *ProxyService) refill(ctx context.Context, pool *core.Pool, candidates *candidateQueue, cfg *config.Config) {
+	s.scanFromCursor(ctx, pool, candidates, cfg)
+	for round := 0; round < maxScanRounds && ctx.Err() == nil && pool.NeedsMore(); round++ {
+		candidates.rewind()
+		s.scanFromCursor(ctx, pool, candidates, cfg)
+	}
+}
+
+// probeAndFill 探测一批 IP，把达标且通过机房白名单的填入池中。
+func (s *ProxyService) probeAndFill(ctx context.Context, pool *core.Pool, batch []core.IP, cfg *config.Config) {
+	// 池满时提前退出，靠 cancel 释放仍在探测的协程
+	scanCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	limitSec := float64(cfg.Latency) / 1000
+	whitelist := core.SplitColos(cfg.Colo)
+
+	for r := range core.StreamLatency(scanCtx, batch, cfg.Concurrency, nil) {
+		if ctx.Err() != nil {
+			return
+		}
+		if r.Latency < 0 || r.Latency > limitSec {
+			continue
+		}
+		if !core.ColoAllowed(r.Colo, whitelist) {
+			continue
+		}
+		if !pool.NeedsMore() {
+			return
+		}
+		pool.TryAdd(r.IP.IP, r.Latency, r.Colo)
+	}
 }
 
 // startForwarder 池中已有节点后开启本地 SOCKS5 监听。
@@ -210,35 +374,6 @@ func (s *ProxyService) startForwarder(ctx context.Context, pool *core.Pool, addr
 	for time.Now().Before(deadline) && forwarder.Addr() == "" && ctx.Err() == nil {
 		time.Sleep(10 * time.Millisecond)
 	}
-}
-
-// scan 扫描候选 IP，把达标节点填入池中，池满即停。
-func (s *ProxyService) scan(ctx context.Context, pool *core.Pool, ips []core.IP, cfg *config.Config) {
-	limitSec := float64(cfg.Latency) / 1000
-	whitelist := core.SplitColos(cfg.Colo)
-	lastEmit := time.Now()
-
-	for r := range core.StreamLatency(ctx, ips, cfg.Concurrency, nil) {
-		if ctx.Err() != nil {
-			return
-		}
-		if r.Latency < 0 || r.Latency > limitSec {
-			continue
-		}
-		if !core.ColoAllowed(r.Colo, whitelist) {
-			continue
-		}
-		if !pool.NeedsMore() {
-			return
-		}
-
-		pool.TryAdd(r.IP.IP, r.Latency, r.Colo)
-		if time.Since(lastEmit) >= poolUpdateThrottle {
-			s.emitUpdate()
-			lastEmit = time.Now()
-		}
-	}
-	s.emitUpdate()
 }
 
 // emitPeriodically 运行期定期推送快照，刷新活跃连接数等随时在变的指标
@@ -272,20 +407,47 @@ func (s *ProxyService) emitUpdate() {
 	s.app.Event.Emit("pool:update", s.Snapshot())
 }
 
+func healthConfigFrom(cfg *config.Config) core.HealthConfig {
+	return core.HealthConfig{
+		Interval:        time.Duration(cfg.HealthInterval) * time.Second,
+		Times:           cfg.PingTimes,
+		Gap:             time.Duration(cfg.PingGap) * time.Millisecond,
+		LossLimit:       cfg.LossLimit,
+		LatencyLimit:    float64(cfg.Latency) / 1000,
+		FailStreakLimit: failStreakLimit,
+		ColoWhitelist:   core.SplitColos(cfg.Colo),
+	}
+}
+
+func primaryTarget(cfg *config.Config) int {
+	if cfg == nil {
+		return 0
+	}
+	return cfg.PrimarySize
+}
+
+func backupTarget(cfg *config.Config) int {
+	if cfg == nil {
+		return 0
+	}
+	return cfg.BackupSize
+}
+
 func toPoolNodes(nodes []core.Node) []PoolNode {
 	out := make([]PoolNode, 0, len(nodes))
 	for _, node := range nodes {
-		latency := -1.0
-		if node.AvgLatency >= 0 {
-			latency = node.AvgLatency * 1000
+		latency := node.Latency
+		if latency < 0 {
+			latency = node.AvgLatency
 		}
 		out = append(out, PoolNode{
 			IP:         node.IP,
 			Colo:       node.Colo,
-			Latency:    latency,
+			Latency:    latency * 1000,
 			LossRate:   node.LossRate,
 			Samples:    node.Samples,
 			FailStreak: node.FailStreak,
+			Isolated:   node.Isolated,
 			UpdatedAt:  node.UpdatedAt.UnixMilli(),
 		})
 	}

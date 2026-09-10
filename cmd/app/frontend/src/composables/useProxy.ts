@@ -75,5 +75,14 @@ export function useProxy() {
     }
   }
 
-  return { snapshot, starting, total, subscribe, refresh, start, stop }
+  /** 立即复测一轮，刷新各节点的实时延迟与丢包率 */
+  async function recheck(): Promise<void> {
+    try {
+      await api.proxy.recheck()
+    } catch (e) {
+      notify(`复测失败：${e}`, 'error')
+    }
+  }
+
+  return { snapshot, starting, total, subscribe, refresh, start, stop, recheck }
 }

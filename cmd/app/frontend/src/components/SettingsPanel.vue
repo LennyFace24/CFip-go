@@ -83,7 +83,7 @@ const sections: { title: string; fields: FieldDef[] }[] = [
       { key: 'healthInterval', label: '检查周期', hint: '多久对池中节点复测一轮', unit: '秒', min: 1, step: 10 },
       { key: 'pingTimes', label: '每次采样次数', hint: '单个节点一轮内探测几次，用于算丢包率', unit: '次', min: 1, step: 1 },
       { key: 'pingGap', label: '采样间隔', hint: '同一次检查内相邻两次探测的间隔', unit: 'ms', min: 0, step: 50 },
-      { key: 'lossLimit', label: '丢包率上限', hint: '取值大于 0 且不超过 1，例如 0.1 表示丢包 10% 即淘汰', unit: '', min: 0, step: 0.05 },
+      { key: 'lossLimit', label: '丢包率上限', hint: '需与采样次数配套：采样 5 次时 0.25 表示允许其中 1 次失败', unit: '', min: 0, step: 0.05 },
     ],
   },
 ]

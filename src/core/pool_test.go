@@ -59,7 +59,7 @@ func TestPoolRemoveEntersCooldown(t *testing.T) {
 	}
 }
 
-func TestPoolUpdateWritesSample(t *testing.T) {
+func TestPoolUpdateWritesFirstSampleDirectly(t *testing.T) {
 	p := NewPool(testConfig())
 	p.TryAdd("1.1.1.1", 0.1, "")
 
@@ -68,26 +68,54 @@ func TestPoolUpdateWritesSample(t *testing.T) {
 		t.Fatal("已存在节点应更新成功")
 	}
 
-	node := p.All()[0]
+	node, _ := p.Get("1.1.1.1")
 	if node.AvgLatency != 0.25 {
-		t.Errorf("AvgLatency: want 0.25, got %v", node.AvgLatency)
+		t.Errorf("首个样本应直接赋值, got %v", node.AvgLatency)
 	}
 	if node.LossRate != 0.5 {
-		t.Errorf("LossRate: want 0.5, got %v", node.LossRate)
+		t.Errorf("LossRate want 0.5, got %v", node.LossRate)
 	}
 	if node.Colo != "SIN" {
-		t.Errorf("Colo: want SIN, got %q", node.Colo)
+		t.Errorf("Colo want SIN, got %q", node.Colo)
 	}
-
-	failed := SampleResult{AvgLatency: -1, LossRate: 1, Success: 0, Total: 3}
-	p.Update("1.1.1.1", failed)
-	if node := p.All()[0]; node.FailStreak != 1 {
-		t.Errorf("整轮失败后 FailStreak 应为 1, got %d", node.FailStreak)
+	if node.Samples != 1 {
+		t.Errorf("Samples want 1, got %d", node.Samples)
 	}
+}
 
-	p.Update("1.1.1.1", sample)
-	if node := p.All()[0]; node.FailStreak != 0 {
-		t.Errorf("成功一轮后 FailStreak 应清零, got %d", node.FailStreak)
+func TestPoolUpdateSmoothsWithEWMA(t *testing.T) {
+	p := NewPool(testConfig())
+	p.TryAdd("1.1.1.1", 0.5, "")
+
+	p.Update("1.1.1.1", SampleResult{AvgLatency: 0.5, Success: 5, Total: 5})
+	p.Update("1.1.1.1", SampleResult{AvgLatency: 0.1, Success: 5, Total: 5})
+
+	node, _ := p.Get("1.1.1.1")
+	// α ≈ 0.095：单个样本只应小幅拉动均值
+	if node.AvgLatency < 0.45 || node.AvgLatency > 0.47 {
+		t.Errorf("EWMA 应小幅变动, got %v", node.AvgLatency)
+	}
+	if node.Samples != 2 {
+		t.Errorf("Samples want 2, got %d", node.Samples)
+	}
+}
+
+func TestPoolUpdateKeepsLatencyOnFailedRound(t *testing.T) {
+	p := NewPool(testConfig())
+	p.TryAdd("1.1.1.1", 0.1, "")
+
+	p.Update("1.1.1.1", SampleResult{AvgLatency: 0.1, Success: 5, Total: 5})
+	p.Update("1.1.1.1", SampleResult{AvgLatency: -1, LossRate: 1, Success: 0, Total: 5})
+
+	node, _ := p.Get("1.1.1.1")
+	if node.Latency != 0.1 {
+		t.Errorf("整轮失败不应清空已有延迟, got %v", node.Latency)
+	}
+	if node.FailStreak != 1 {
+		t.Errorf("FailStreak want 1, got %d", node.FailStreak)
+	}
+	if node.LossRate <= 0.09 || node.LossRate >= 0.11 {
+		t.Errorf("丢包率应按 EWMA 上升, got %v", node.LossRate)
 	}
 }
 
@@ -95,6 +123,31 @@ func TestPoolUpdateMissingNode(t *testing.T) {
 	p := NewPool(testConfig())
 	if p.Update("9.9.9.9", SampleResult{}) {
 		t.Error("不存在的节点应返回 false")
+	}
+}
+
+func TestPoolIsolateAndRecover(t *testing.T) {
+	p := NewPool(testConfig())
+	p.TryAdd("1.1.1.1", 0.1, "")
+
+	if !p.Isolate("1.1.1.1") {
+		t.Fatal("首次隔离应成功")
+	}
+	if p.Isolate("1.1.1.1") {
+		t.Error("重复隔离应返回 false")
+	}
+	if p.ActivePrimaryCount() != 0 {
+		t.Errorf("隔离后不应计入可用, got %d", p.ActivePrimaryCount())
+	}
+	if !p.Contains("1.1.1.1") {
+		t.Error("隔离的节点仍应留在池中")
+	}
+
+	if !p.Recover("1.1.1.1") {
+		t.Fatal("解除隔离应成功")
+	}
+	if p.ActivePrimaryCount() != 1 {
+		t.Errorf("恢复后应计入可用, got %d", p.ActivePrimaryCount())
 	}
 }
 
@@ -122,18 +175,70 @@ func TestPoolPickPrefersPrimaryAndFallsBack(t *testing.T) {
 	}
 }
 
-func TestPoolSnapshotPutsFailedLast(t *testing.T) {
-	p := NewPool(PoolConfig{PrimarySize: 3, BackupSize: 0, Cooldown: time.Second})
+func TestPoolPickSkipsIsolatedNode(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Second})
 	p.TryAdd("1.1.1.1", 0.1, "")
 	p.TryAdd("2.2.2.2", 0.2, "")
-	p.TryAdd("3.3.3.3", 0.3, "")
+	p.Isolate("1.1.1.1")
 
-	// 让延迟最低的节点整轮失败
-	p.Update("1.1.1.1", SampleResult{AvgLatency: -1, LossRate: 1, Total: 3})
+	for i := 0; i < 10; i++ {
+		if got := p.Pick(); got == nil || got.IP != "2.2.2.2" {
+			t.Fatalf("应跳过隔离节点, got %v", got)
+		}
+	}
 
-	primary, _ := p.Snapshot()
-	if primary[len(primary)-1].IP != "1.1.1.1" {
-		t.Fatalf("整轮失败的节点应排到最后, got %s", primary[len(primary)-1].IP)
+	// 全部隔离时退而选一个，避免完全没有出口
+	p.Isolate("2.2.2.2")
+	if got := p.Pick(); got == nil {
+		t.Fatal("全部隔离时应兜底返回一个节点")
+	}
+}
+
+func TestPoolTryEvictAllowsWhenPlentyActive(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 4, BackupSize: 1, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.1, "")
+	p.TryAdd("3.3.3.3", 0.1, "")
+	p.TryAdd("4.4.4.4", 0.1, "")
+
+	if !p.TryEvict() {
+		t.Fatal("可用数充足时应直接放行")
+	}
+	if p.ActivePrimaryCount() != 4 {
+		t.Error("放行不应改变池内容")
+	}
+}
+
+func TestPoolTryEvictPromotesFromBackupWhenLow(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 4, BackupSize: 1, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.1, "")
+	p.TryAdd("3.3.3.3", 0.1, "")
+	p.TryAdd("4.4.4.4", 0.1, "")
+	p.TryAdd("5.5.5.5", 0.1, "") // 备用
+
+	p.Isolate("1.1.1.1")
+	p.Isolate("2.2.2.2")
+
+	if !p.TryEvict() {
+		t.Fatal("备用有可用节点时应允许淘汰")
+	}
+	if !p.Contains("5.5.5.5") {
+		t.Fatal("备用节点应被提升")
+	}
+	if p.Contains("1.1.1.1") {
+		t.Error("主选满员时应腾出一个隔离节点")
+	}
+}
+
+func TestPoolTryEvictRejectedWithoutBackup(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.1, "")
+	p.Isolate("1.1.1.1")
+
+	if p.TryEvict() {
+		t.Fatal("可用数触底且无备用时应拒绝淘汰")
 	}
 }
 
@@ -151,12 +256,29 @@ func TestPoolPromote(t *testing.T) {
 	if !p.Promote() {
 		t.Fatal("主选有空缺时应提升成功")
 	}
-	if !p.Contains("3.3.3.3") {
-		t.Fatal("3.3.3.3 应仍在池中")
-	}
 	primary, backup := p.Snapshot()
 	if len(primary) != 2 || len(backup) != 0 {
 		t.Fatalf("提升后 want 2/0, got %d/%d", len(primary), len(backup))
+	}
+}
+
+func TestPoolPromotePicksBestBackup(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 1, BackupSize: 2, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.5, "") // 主选
+	p.TryAdd("2.2.2.2", 0.4, "") // 备用，较差
+	p.TryAdd("3.3.3.3", 0.1, "") // 备用，最优
+
+	p.Remove("1.1.1.1")
+	if !p.Promote() {
+		t.Fatal("应提升成功")
+	}
+
+	primary, backup := p.Snapshot()
+	if primary[0].IP != "3.3.3.3" {
+		t.Fatalf("应提升最优的备用节点, got %s", primary[0].IP)
+	}
+	if len(backup) != 1 || backup[0].IP != "2.2.2.2" {
+		t.Fatalf("剩余备用应为 2.2.2.2, got %v", backup)
 	}
 }
 
@@ -169,5 +291,55 @@ func TestPoolSnapshotSortedByLatency(t *testing.T) {
 	primary, _ := p.Snapshot()
 	if primary[0].IP != "2.2.2.2" || primary[1].IP != "1.1.1.1" {
 		t.Fatalf("主选应按延迟升序, got %s %s", primary[0].IP, primary[1].IP)
+	}
+}
+
+func TestPoolSnapshotPutsIsolatedLast(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 3, BackupSize: 0, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.2, "")
+	p.TryAdd("3.3.3.3", 0.3, "")
+	p.Isolate("1.1.1.1")
+
+	primary, _ := p.Snapshot()
+	if primary[len(primary)-1].IP != "1.1.1.1" {
+		t.Fatalf("隔离节点应排到最后, got %s", primary[len(primary)-1].IP)
+	}
+}
+
+func TestCompareEvictionThresholds(t *testing.T) {
+	base := Node{AvgLatency: 0.2, LossRate: 0}
+
+	// 延迟差不足 20ms → 不比延迟，比丢包
+	near := Node{AvgLatency: 0.205, LossRate: 0.05}
+	if CompareEviction(near, base) <= 0 {
+		t.Error("延迟接近时应按丢包判定，丢包高者更差")
+	}
+
+	// 延迟差超过 20ms → 延迟高者更差
+	slow := Node{AvgLatency: 0.3, LossRate: 0}
+	if CompareEviction(slow, base) <= 0 {
+		t.Error("延迟差显著时，延迟高者更差")
+	}
+
+	// 隔离节点最差
+	isolated := Node{AvgLatency: 0.05, Isolated: true}
+	if CompareEviction(isolated, base) <= 0 {
+		t.Error("隔离节点应被视为最差")
+	}
+
+	// 各项都在阈值内 → 视为等价
+	same := Node{AvgLatency: 0.205, LossRate: 0.005}
+	if CompareEviction(same, base) != 0 {
+		t.Error("差异都在阈值内时应返回 0")
+	}
+}
+
+func TestMinActiveTarget(t *testing.T) {
+	cases := map[int]int{1: 1, 2: 1, 3: 2, 4: 2, 10: 5}
+	for size, want := range cases {
+		if got := minActiveTarget(size); got != want {
+			t.Errorf("minActiveTarget(%d) = %d, want %d", size, got, want)
+		}
 	}
 }
