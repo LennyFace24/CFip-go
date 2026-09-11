@@ -1,43 +1,62 @@
 /**
  * 日志导出。
  *
- * 测速结束时后端会自动往日志目录写一份 speed-latest.txt（覆盖上一次）；
- * 这里负责把当前结果按同样格式手动导出到用户指定的位置。
+ * 测速路径下后端会自动写 speed-latest.txt；代理长期运行没有明确终点，
+ * 因此这里提供手动导出当前 IP 池快照的能力。
  */
 
 import { api } from '../services/api'
-import type { Row } from '../types'
+import type { PoolNode, PoolSnapshot } from '../types'
 import { useToast } from './useToast'
 
-function qualifiedRows(rows: Row[], limit: number): Row[] {
-  return rows.filter((row) => row.latency >= 0 && row.latency <= limit)
+function formatLatency(value: number): string {
+  return value >= 0 ? value.toFixed(1) : '—'
 }
 
-/** 与后端 WriteSpeedLog 保持一致的排版：达标优先、延迟升序、失败最后 */
-function toLog(rows: Row[], limit: number): string {
-  const qualifiedSet = new Set(qualifiedRows(rows, limit))
-  const sorted = [...rows].sort((a, b) => {
-    const qa = qualifiedSet.has(a)
-    const qb = qualifiedSet.has(b)
-    if (qa !== qb) return qa ? -1 : 1
-    if (a.latency < 0) return 1
-    if (b.latency < 0) return -1
-    return a.latency - b.latency
-  })
+function formatTime(ms: number): string {
+  if (!ms) return '—'
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
+function nodeLines(nodes: PoolNode[], group: string): string[] {
+  return nodes.map((node) =>
+    [
+      group,
+      node.ip,
+      node.colo || '-',
+      formatLatency(node.latency),
+      `${(node.lossRate * 100).toFixed(0)}%`,
+      String(node.samples),
+      formatTime(node.updatedAt),
+      node.isolated ? '隔离' : '正常',
+    ].join('\t'),
+  )
+}
+
+/** 把池快照排成便于直接阅读的文本 */
+export function poolSnapshotText(snapshot: PoolSnapshot): string {
   const lines = [
-    'CFip 测速日志',
+    'CFip IP 池快照',
     `生成时间: ${new Date().toLocaleString('zh-CN', { hour12: false })}`,
-    `延迟上限: ${limit} ms`,
-    `探测: ${rows.length}    达标: ${qualifiedSet.size}`,
+    `阶段: ${snapshot.phase}`,
+    `监听: ${snapshot.listenAddr || '未监听'}`,
+    `候选: ${snapshot.scanDone} / ${snapshot.scanTotal}`,
+    `主选: ${snapshot.primary.length} / ${snapshot.primaryTarget}` +
+      `    备用: ${snapshot.backup.length} / ${snapshot.backupTarget}` +
+      `    活跃连接: ${snapshot.activeConns}`,
     '',
-    'IP\t延迟(ms)\t状态\t来源',
+    '分组\tIP\t机房\t延迟(ms)\t丢包率\t采样\t最后检查\t状态',
+    ...nodeLines(snapshot.primary, '主选'),
+    ...nodeLines(snapshot.backup, '备用'),
   ]
 
-  for (const row of sorted) {
-    const latency = row.latency >= 0 ? row.latency.toFixed(1) : '-'
-    const state = row.latency < 0 ? '失败' : row.latency <= limit ? '达标' : '超标'
-    lines.push(`${row.ip}\t${latency}\t${state}\t${row.source}`)
+  if (snapshot.evictions.length) {
+    lines.push('', '最近淘汰（原因\t时间）')
+    for (const item of snapshot.evictions) {
+      lines.push(`${item.ip}\t${item.reason}\t${formatTime(item.time)}`)
+    }
   }
   return lines.join('\n')
 }
@@ -45,15 +64,14 @@ function toLog(rows: Row[], limit: number): string {
 export function useLog() {
   const { notify } = useToast()
 
-  async function exportRows(rows: Row[], limit: number): Promise<void> {
-    if (!rows.length) {
-      notify('没有可导出的结果', 'error')
+  async function exportPool(snapshot: PoolSnapshot): Promise<void> {
+    if (!snapshot.primary.length && !snapshot.backup.length) {
+      notify('池中还没有节点', 'error')
       return
     }
     try {
-      const path = await api.log.export(toLog(rows, limit), '')
-      notify(`已导出 ${rows.length} 条结果`, 'success')
-      console.log('[CFip] 日志已导出到', path)
+      await api.log.export(poolSnapshotText(snapshot), '')
+      notify('已导出 IP 池快照', 'success')
     } catch (e) {
       notify(`导出失败：${e}`, 'error')
     }
@@ -67,5 +85,5 @@ export function useLog() {
     }
   }
 
-  return { exportRows, openDir }
+  return { exportPool, openDir }
 }

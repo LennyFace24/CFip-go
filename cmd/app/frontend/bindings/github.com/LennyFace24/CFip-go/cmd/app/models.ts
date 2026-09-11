@@ -114,6 +114,17 @@ export interface PoolNode {
  */
 export interface PoolSnapshot {
     "Running": boolean;
+    "Phase": string;
+
+    /**
+     * 候选 IP 总数
+     */
+    "ScanTotal": number;
+
+    /**
+     * 本轮扫描已探测的数量
+     */
+    "ScanDone": number;
     "PrimaryTarget": number;
     "BackupTarget": number;
 

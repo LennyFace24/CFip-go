@@ -16,6 +16,9 @@ const EVENT_UPDATE = 'pool:update'
 function emptySnapshot(): PoolSnapshot {
   return {
     running: false,
+    phase: 'idle',
+    scanTotal: 0,
+    scanDone: 0,
     primaryTarget: 0,
     backupTarget: 0,
     listenAddr: '',

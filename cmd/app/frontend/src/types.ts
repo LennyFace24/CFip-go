@@ -5,34 +5,55 @@
  * Go 侧大驼峰的原始形状统一以 `XxxDTO` 命名，只允许出现在 services/api.ts 中。
  */
 
-export type Tab = 'speed' | 'proxy' | 'settings'
+export type Tab = 'proxy' | 'settings'
 
-/** 结果表格排序方式 */
-export type SortMode = 'latency' | 'ip' | 'status'
+/** 代理所处的阶段 */
+export type PoolPhase = 'idle' | 'scanning' | 'ready'
 
-/** 一条测速结果。latency 单位毫秒，小于 0 表示探测失败 */
-export interface Row {
-  seq: number
+/** IP 池中的一个节点 */
+export interface PoolNode {
   ip: string
-  latency: number
-  source: string
-  /** 机房代码，取自 cf-ray，可能为空 */
   colo: string
-  /** 是否通过机房白名单 */
-  allowed: boolean
+  /** 最近一轮采样的平均延迟（ms） */
+  latency: number
+  /** EWMA 丢包率，0~1 */
+  lossRate: number
+  /** 已累积的检查轮数 */
+  samples: number
+  /** 连续「整轮失败」次数 */
+  failStreak: number
+  /** 隔离观察中：仍在池内，但不参与流量分发 */
+  isolated: boolean
+  /** 最后更新时间，Unix 毫秒 */
+  updatedAt: number
 }
 
-/** 测速进度 */
-export interface Progress {
-  done: number
-  /** 达标：通过白名单、探测成功且延迟不超过上限 */
-  qualified: number
-  /** 超标：探测成功但延迟超过上限 */
-  over: number
-  /** 请求失败 */
-  failed: number
-  /** 机房不符：未通过白名单 */
-  excluded: number
+/** 一条淘汰记录 */
+export interface EvictionRecord {
+  ip: string
+  reason: string
+  time: number
+}
+
+/** IP 池快照 */
+export interface PoolSnapshot {
+  running: boolean
+  phase: PoolPhase
+  /** 候选 IP 总数 */
+  scanTotal: number
+  /** 已探测数量 */
+  scanDone: number
+  primaryTarget: number
+  backupTarget: number
+  /** 本地 SOCKS5 监听地址，空串表示未监听 */
+  listenAddr: string
+  /** 监听失败原因 */
+  listenError: string
+  /** 当前正在转发的连接数 */
+  activeConns: number
+  primary: PoolNode[]
+  backup: PoolNode[]
+  evictions: EvictionRecord[]
 }
 
 /** 测速配置 */
@@ -84,22 +105,14 @@ export interface ImportResult {
   count: number
 }
 
-/** 一次测速结束后的汇总 */
-export interface SpeedSummary {
-  /** 已探测总数 */
-  total: number
-  qualified: number
-  overLimit: number
-  failed: number
-  excluded: number
-  elapsed: number
-  stopped: boolean
-  /** 自动写入的日志文件路径 */
-  logPath: string
+/** 内置网段列表及其来源 */
+export interface CidrSource {
+  cidrs: string[]
+  /** true = 在线拉取成功，false = 回退编译期内置列表 */
+  online: boolean
+  /** 在线拉取失败原因 */
+  error: string
 }
-
-/** 结果状态：达标 / 超标 / 失败 / 机房不符 */
-export type RowState = 'qualified' | 'over' | 'failed' | 'excluded'
 
 /** Toast 类型 */
 export type ToastKind = 'info' | 'success' | 'error'
@@ -108,56 +121,6 @@ export interface ToastItem {
   id: number
   text: string
   kind: ToastKind
-}
-
-/** IP 池中的一个节点 */
-export interface PoolNode {
-  ip: string
-  colo: string
-  /** 平均延迟（ms），小于 0 表示该轮全部失败 */
-  latency: number
-  /** 丢包率，0~1 */
-  lossRate: number
-  /** 最近一次采样的总次数 */
-  samples: number
-  /** 连续「整轮失败」次数 */
-  failStreak: number
-  /** 隔离观察中：仍在池内，但不参与流量分发 */
-  isolated: boolean
-  /** 最后更新时间，Unix 毫秒 */
-  updatedAt: number
-}
-
-/** 一条淘汰记录 */
-export interface EvictionRecord {
-  ip: string
-  reason: string
-  time: number
-}
-
-/** IP 池快照 */
-export interface PoolSnapshot {
-  running: boolean
-  primaryTarget: number
-  backupTarget: number
-  /** 本地 SOCKS5 监听地址，空串表示未监听 */
-  listenAddr: string
-  /** 监听失败原因 */
-  listenError: string
-  /** 当前正在转发的连接数 */
-  activeConns: number
-  primary: PoolNode[]
-  backup: PoolNode[]
-  evictions: EvictionRecord[]
-}
-
-/** 内置网段列表及其来源 */
-export interface CidrSource {
-  cidrs: string[]
-  /** true = 在线拉取成功，false = 回退编译期内置列表 */
-  online: boolean
-  /** 在线拉取失败原因 */
-  error: string
 }
 
 /* ---------------- Go 侧原始形状（仅 services/api.ts 可见） ---------------- */
@@ -200,15 +163,6 @@ export interface ImportResultDTO {
   Count: number
 }
 
-export interface SpeedResultDTO {
-  Seq: number
-  IP: string
-  Latency: number
-  Source: string
-  Colo: string
-  Allowed: boolean
-}
-
 export interface PoolNodeDTO {
   IP: string
   Colo: string
@@ -229,6 +183,9 @@ export interface EvictionRecordDTO {
 // Go 的切片可以是 nil，绑定生成的类型因此带 | null
 export interface PoolSnapshotDTO {
   Running: boolean
+  Phase: string
+  ScanTotal: number
+  ScanDone: number
   PrimaryTarget: number
   BackupTarget: number
   ListenAddr: string
@@ -237,15 +194,4 @@ export interface PoolSnapshotDTO {
   Primary: PoolNodeDTO[] | null
   Backup: PoolNodeDTO[] | null
   Evictions: EvictionRecordDTO[] | null
-}
-
-export interface SpeedSummaryDTO {
-  Total: number
-  Qualified: number
-  OverLimit: number
-  Failed: number
-  Excluded: number
-  Elapsed: number
-  Stopped: boolean
-  LogPath: string
 }

@@ -28,6 +28,7 @@ import type {
   ImportResultDTO,
   PoolNode,
   PoolNodeDTO,
+  PoolPhase,
   PoolSnapshot,
   PoolSnapshotDTO,
 } from '../types'
@@ -100,6 +101,9 @@ function toEviction(dto: EvictionRecordDTO): EvictionRecord {
 export function toPoolSnapshot(dto: PoolSnapshotDTO): PoolSnapshot {
   return {
     running: Boolean(dto.Running),
+    phase: (dto.Phase || 'idle') as PoolPhase,
+    scanTotal: dto.ScanTotal ?? 0,
+    scanDone: dto.ScanDone ?? 0,
     primaryTarget: dto.PrimaryTarget,
     backupTarget: dto.BackupTarget,
     listenAddr: dto.ListenAddr ?? '',
@@ -191,7 +195,7 @@ export const api = {
       await ProxyService.StartPool(text)
     },
 
-    /** 停止扫描与健康检查 */
+    /** 停止扫描、转发与健康检查 */
     async stopPool(): Promise<void> {
       await ProxyService.StopPool()
     },

@@ -11,10 +11,9 @@ interface NavItem {
 }
 
 const items: NavItem[] = [
-  { key: 'speed', label: '测速', icon: 'M13 2 3 14h8l-1 8 10-12h-8l1-8z' },
   {
     key: 'proxy',
-    label: 'IP 池',
+    label: '代理',
     icon:
       'M18 16.1a3 3 0 0 0-2.1.9l-6.1-3.6a3.1 3.1 0 0 0 0-2.8l6.1-3.6a3 3 0 1 0-1-2.1c0 .3 0 .5.1.8L8.9 9.3a3 3 0 1 0 0 5.4l6.1 3.6c0 .2-.1.5-.1.7a3 3 0 1 0 3-3z',
   },
@@ -29,7 +28,14 @@ const items: NavItem[] = [
 
 <template>
   <aside class="sidebar">
-    
+    <div class="brand">
+      <span class="brand-logo">CF</span>
+      <div class="brand-text">
+        <span class="brand-name">CFip</span>
+        <span class="brand-sub">优选 IP 代理</span>
+      </div>
+    </div>
+
     <nav class="nav">
       <button
         v-for="item in items"

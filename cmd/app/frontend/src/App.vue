@@ -4,7 +4,6 @@ import TitleBar from './components/TitleBar.vue'
 import SideBar from './components/SideBar.vue'
 import SourcePanel from './components/SourcePanel.vue'
 import ProxyPanel from './components/ProxyPanel.vue'
-import ResultTable from './components/ResultTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import ToastHost from './components/ToastHost.vue'
 import { useColo } from './composables/useColo'
@@ -12,11 +11,10 @@ import { useConfig } from './composables/useConfig'
 import { useLog } from './composables/useLog'
 import { useProxy } from './composables/useProxy'
 import { useSource } from './composables/useSource'
-import { useSpeedTest } from './composables/useSpeedTest'
 import type { Tab } from './types'
 
 /* ---------------- 页面级状态 ---------------- */
-const tab = ref<Tab>('speed')
+const tab = ref<Tab>('proxy')
 
 /* ---------------- 业务状态（各自封装在 composable 里） ---------------- */
 const {
@@ -49,22 +47,6 @@ const {
 } = useSource()
 
 const {
-  rows,
-  running,
-  progress,
-  summary,
-  avgLatency,
-  bestIp,
-  subscribe,
-  start: startSpeed,
-  stop: stopSpeed,
-  copyBest,
-  copyOne,
-} = useSpeedTest()
-
-const { exportRows, openDir } = useLog()
-const { recommended, load: loadColos } = useColo()
-const {
   snapshot: pool,
   starting: poolStarting,
   subscribe: subscribePool,
@@ -73,31 +55,31 @@ const {
   recheck: recheckPool,
 } = useProxy()
 
-const titles: Record<Tab, string> = {
-  speed: '优选 IP 测速',
-  proxy: 'IP 池',
-  settings: '设置',
-}
+const { exportPool, openDir } = useLog()
+const { recommended, load: loadColos } = useColo()
+
+const titles: Record<Tab, string> = { proxy: '代理', settings: '设置' }
 
 const subtitle = computed(() => {
-  switch (tab.value) {
-    case 'speed':
-      return `当前 IP 源共 ${ipCount.value} 个待测 IP`
-    case 'proxy':
-      return pool.value.running
-        ? `主选 ${pool.value.primary.length} / ${pool.value.primaryTarget} · 备用 ${pool.value.backup.length} / ${pool.value.backupTarget}`
-        : '停止状态下池中节点保留，可随时重新启动'
-    default:
-      return `配置文件：${savedConfig.value.path || '（未加载）'}`
+  if (tab.value === 'settings') {
+    return `配置文件：${savedConfig.value.path || '（未加载）'}`
   }
+
+  const current = pool.value
+  if (current.phase === 'scanning') {
+    return `正在扫描候选 IP　${current.scanDone} / ${current.scanTotal}`
+  }
+  if (current.running) {
+    const listen = current.listenAddr ? ` · ${current.listenAddr}` : ''
+    return `主选 ${current.primary.length} / ${current.primaryTarget} · 备用 ${current.backup.length} / ${current.backupTarget}${listen}`
+  }
+  return '一键完成测速、优选、入池与转发'
 })
 
 onMounted(async () => {
-  subscribe()
   subscribePool()
   await Promise.all([loadConfig(), initSource(), loadColos()])
 })
-
 </script>
 
 <template>
@@ -113,11 +95,13 @@ onMounted(async () => {
             <h1>{{ titles[tab] }}</h1>
             <p class="sub">{{ subtitle }}</p>
           </div>
-          <span v-if="running" class="chip live"><i class="dot" />测速中</span>
+          <span v-if="pool.running" class="chip live">
+            <i class="dot" />{{ pool.phase === 'scanning' ? '扫描中' : '运行中' }}
+          </span>
         </header>
 
         <Transition name="page" mode="out-in">
-          <div v-if="tab === 'speed'" key="speed" class="content">
+          <div v-if="tab === 'proxy'" key="proxy" class="content">
             <SourcePanel
               v-model:text="sourceText"
               v-model:selected="selected"
@@ -126,7 +110,7 @@ onMounted(async () => {
               :path="importPath"
               :cidrs="cidrs"
               :loading="importing"
-              :disabled="running"
+              :disabled="pool.running"
               :cidr-online="cidrOnline"
               :cidr-error="cidrError"
               :refreshing="refreshing"
@@ -136,33 +120,15 @@ onMounted(async () => {
               @refresh="loadCidrs({ silent: false })"
             />
 
-            <ResultTable
-              :rows="rows"
-              :running="running"
-              :progress="progress"
-              :summary="summary"
-              :target="savedConfig.number"
-              :latency-limit="savedConfig.latency"
-              :avg-latency="avgLatency"
-              :best-ip="bestIp"
-              @start="startSpeed(sourceText, savedConfig.latency)"
-              @stop="stopSpeed"
-              @copy="copyBest(savedConfig.number)"
-              @copy-one="copyOne"
-              @export="exportRows(rows, savedConfig.latency)"
-              @open-dir="openDir"
-            />
-          </div>
-
-          <div v-else-if="tab === 'proxy'" key="proxy" class="content">
             <ProxyPanel
               :snapshot="pool"
               :ip-count="ipCount"
               :starting="poolStarting"
-              :disabled="running"
               @start="startPool(sourceText)"
               @stop="stopPool"
               @recheck="recheckPool"
+              @export="exportPool(pool)"
+              @open-dir="openDir"
             />
           </div>
 

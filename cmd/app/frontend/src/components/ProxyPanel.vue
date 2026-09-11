@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import StatTile from './StatTile.vue'
 import type { PoolSnapshot } from '../types'
 
@@ -7,11 +8,36 @@ const props = defineProps<{
   /** 当前 IP 来源的候选数量，为 0 时无法启动 */
   ipCount: number
   starting: boolean
-  /** 测速进行中时禁止启动池，避免两者争抢带宽 */
-  disabled: boolean
 }>()
 
-const emit = defineEmits<{ start: []; stop: []; recheck: [] }>()
+const emit = defineEmits<{
+  start: []
+  stop: []
+  recheck: []
+  export: []
+  openDir: []
+}>()
+
+const scanning = computed(() => props.snapshot.phase === 'scanning')
+const hasNodes = computed(
+  () => props.snapshot.primary.length + props.snapshot.backup.length > 0,
+)
+
+const scanPercent = computed(() => {
+  const { scanDone, scanTotal } = props.snapshot
+  if (!scanTotal) return 0
+  return Math.min(100, Math.round((scanDone / scanTotal) * 100))
+})
+
+const total = computed(
+  () => props.snapshot.primary.length + props.snapshot.backup.length,
+)
+
+const statusText = computed(() => {
+  if (props.snapshot.phase === 'scanning') return '扫描中'
+  if (props.snapshot.running) return '运行中'
+  return '已停止'
+})
 
 function formatLatency(value: number): string {
   return value >= 0 ? value.toFixed(1) : '—'
@@ -39,15 +65,15 @@ function formatTime(ms: number): string {
           />
         </svg>
         <div>
-          <h2>IP 池</h2>
+          <h2>代理</h2>
           <p class="card-sub">
-            扫描达标节点入池并周期复测；超限节点先隔离观察，仍不达标才淘汰并补测新 IP
+            一键完成测速、优选、入池与转发；运行中周期复测，劣化节点先隔离再淘汰并自动补测新 IP
           </p>
         </div>
       </div>
       <span class="chip" :class="snapshot.running ? 'live' : ''">
         <i v-if="snapshot.running" class="dot" />
-        {{ snapshot.running ? '运行中' : '已停止' }}
+        {{ statusText }}
       </span>
     </header>
 
@@ -55,22 +81,31 @@ function formatTime(ms: number): string {
       <button
         v-if="!snapshot.running"
         class="btn primary"
-        :disabled="starting || disabled"
+        :disabled="starting || !ipCount"
         @click="emit('start')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7V5z" /></svg>
-        {{ starting ? '启动中…' : '启动 IP 池' }}
+        {{ starting ? '启动中…' : '启动代理' }}
       </button>
       <button v-else class="btn danger" @click="emit('stop')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z" /></svg>
         停止
       </button>
+
       <button class="btn ghost" :disabled="!snapshot.running" @click="emit('recheck')">
         立即复测
       </button>
-      <span class="hint-text">
-        候选来源：{{ ipCount }} 个 IP<span v-if="!ipCount">（请先在测速页导入或加载内置网段）</span>
-      </span>
+      <button class="btn ghost" :disabled="!hasNodes" @click="emit('export')">导出快照</button>
+      <button class="btn ghost" @click="emit('openDir')">日志目录</button>
+
+      <span v-if="!ipCount" class="hint-text">请先在上方设置 IP 来源</span>
+    </div>
+
+    <div v-if="scanning" class="progress">
+      <div class="progress-bar indeterminate">
+        <span :style="{ width: scanPercent + '%' }" />
+      </div>
+      <span class="progress-text">{{ snapshot.scanDone }} / {{ snapshot.scanTotal }}</span>
     </div>
 
     <div class="stats">
@@ -83,18 +118,18 @@ function formatTime(ms: number): string {
 
     <p v-if="snapshot.listenError" class="warn-text">监听失败：{{ snapshot.listenError }}</p>
     <p v-else-if="snapshot.listenAddr" class="hint-text">
-      代理已就绪：把浏览器或应用的 SOCKS5 代理指向 {{ snapshot.listenAddr }} 即可通过优选节点访问
+      代理已就绪：把浏览器或应用的 SOCKS5 代理指向 {{ snapshot.listenAddr }}，即可通过优选节点访问
       Cloudflare 上的站点
     </p>
 
-    <div class="table-wrap">
+    <div v-if="!scanning" class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>分组</th>
             <th>IP</th>
             <th>机房</th>
-            <th class="num-col">平均延迟 (ms)</th>
+            <th class="num-col">延迟 (ms)</th>
             <th class="num-col">丢包率</th>
             <th class="num-col">采样</th>
             <th>最后检查</th>
@@ -126,14 +161,18 @@ function formatTime(ms: number): string {
             <td class="dim">{{ formatTime(node.updatedAt) }}</td>
           </tr>
 
-          <tr v-if="!snapshot.primary.length && !snapshot.backup.length">
+          <tr v-if="!hasNodes">
             <td colspan="7" class="empty">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM13.2 17h-2.4v-6h2.4v6z"
                 />
               </svg>
-              <span>{{ snapshot.running ? '正在扫描候选 IP…' : '池为空，点击「启动 IP 池」开始扫描' }}</span>
+              <span v-if="snapshot.running">正在扫描候选 IP…</span>
+              <span v-else-if="snapshot.phase === 'ready'">
+                扫描完成但没有节点达标，请放宽延迟上限或调整 IP 来源
+              </span>
+              <span v-else>点击「启动代理」开始</span>
             </td>
           </tr>
         </tbody>
@@ -143,7 +182,10 @@ function formatTime(ms: number): string {
     <div v-if="snapshot.evictions.length" class="evict-log">
       <h3 class="group-title">最近淘汰</h3>
       <ul>
-        <li v-for="(item, index) in snapshot.evictions.slice().reverse()" :key="`${item.ip}-${item.time}-${index}`">
+        <li
+          v-for="(item, index) in snapshot.evictions.slice().reverse()"
+          :key="`${item.ip}-${item.time}-${index}`"
+        >
           <span class="mono">{{ item.ip }}</span>
           <span class="dim">{{ item.reason }}</span>
           <span class="dim">{{ formatTime(item.time) }}</span>

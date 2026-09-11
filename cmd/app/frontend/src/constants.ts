@@ -31,10 +31,3 @@ export const PARSE_DEBOUNCE_MS = 250
 
 /** Toast 默认停留时长 */
 export const TOAST_DURATION_MS = 2600
-
-/** 结果表格排序方式 */
-export const SORT_MODES = [
-  { key: 'latency', label: '延迟' },
-  { key: 'ip', label: 'IP' },
-  { key: 'status', label: '状态' },
-] as const

@@ -54,9 +54,19 @@ type EvictionRecord struct {
 	Time   int64 // Unix 毫秒
 }
 
+// 代理所处的阶段
+const (
+	phaseIdle     = "idle"     // 未启动
+	phaseScanning = "scanning" // 首轮扫描候选 IP 中
+	phaseReady    = "ready"    // 扫描完成，池已就绪
+)
+
 // PoolSnapshot 池的完整快照，前端据此整体刷新界面
 type PoolSnapshot struct {
 	Running       bool
+	Phase         string
+	ScanTotal     int // 候选 IP 总数
+	ScanDone      int // 本轮扫描已探测的数量
 	PrimaryTarget int
 	BackupTarget  int
 	ListenAddr    string // 本地 SOCKS5 监听地址；空串表示未监听
@@ -113,6 +123,9 @@ type ProxyService struct {
 	trigger    chan struct{}
 	evicts     []EvictionRecord
 	listenErr  string
+	phase      string
+	scanTotal  int
+	scanDone   int
 }
 
 func (s *ProxyService) ServiceName() string { return "ProxyService" }
@@ -143,6 +156,9 @@ func (s *ProxyService) StartPool(text string) error {
 	s.forwarder = nil
 	s.checker = nil
 	s.trigger = make(chan struct{}, 1)
+	s.phase = phaseScanning
+	s.scanTotal = len(ips)
+	s.scanDone = 0
 	s.cfg = cfg
 	s.pool = core.NewPool(core.PoolConfig{
 		PrimarySize: cfg.PrimarySize,
@@ -199,6 +215,9 @@ func (s *ProxyService) Snapshot() PoolSnapshot {
 	primary, backup := s.pool.Snapshot()
 	snapshot := PoolSnapshot{
 		Running:       s.cancel != nil,
+		Phase:         s.phase,
+		ScanTotal:     s.scanTotal,
+		ScanDone:      s.scanDone,
 		PrimaryTarget: primaryTarget(s.cfg),
 		BackupTarget:  backupTarget(s.cfg),
 		ListenError:   s.listenErr,
@@ -220,6 +239,7 @@ func (s *ProxyService) run(ctx context.Context, pool *core.Pool, candidates *can
 		s.forwarder = nil
 		s.checker = nil
 		s.trigger = nil
+		s.phase = phaseIdle
 		s.mu.Unlock()
 		s.emitUpdate()
 	}()
@@ -229,6 +249,10 @@ func (s *ProxyService) run(ctx context.Context, pool *core.Pool, candidates *can
 	if ctx.Err() != nil {
 		return
 	}
+
+	s.mu.Lock()
+	s.phase = phaseReady
+	s.mu.Unlock()
 
 	s.startForwarder(ctx, pool, cfg.ProxyListen)
 
@@ -338,6 +362,7 @@ func (s *ProxyService) probeAndFill(ctx context.Context, pool *core.Pool, batch 
 		if ctx.Err() != nil {
 			return
 		}
+		s.addScanDone(1)
 		if r.Latency < 0 || r.Latency > limitSec {
 			continue
 		}
@@ -389,6 +414,12 @@ func (s *ProxyService) emitPeriodically(ctx context.Context) {
 			s.emitUpdate()
 		}
 	}
+}
+
+func (s *ProxyService) addScanDone(delta int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scanDone += delta
 }
 
 func (s *ProxyService) appendEviction(record EvictionRecord) {
