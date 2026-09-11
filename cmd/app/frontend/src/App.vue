@@ -48,7 +48,6 @@ const {
 
 const {
   snapshot: pool,
-  starting: poolStarting,
   subscribe: subscribePool,
   start: startPool,
   stop: stopPool,
@@ -96,7 +95,7 @@ onMounted(async () => {
             <p class="sub">{{ subtitle }}</p>
           </div>
           <span v-if="pool.running" class="chip live">
-            <i class="dot" />{{ pool.phase === 'scanning' ? '扫描中' : '运行中' }}
+            {{ pool.phase === 'scanning' ? '扫描中' : '运行中' }}
           </span>
         </header>
 
@@ -123,7 +122,6 @@ onMounted(async () => {
             <ProxyPanel
               :snapshot="pool"
               :ip-count="ipCount"
-              :starting="poolStarting"
               @start="startPool(sourceText)"
               @stop="stopPool"
               @recheck="recheckPool"

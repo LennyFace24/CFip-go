@@ -5,7 +5,7 @@
  * 整体替换快照——不做轮询，也不在本地维护增量。
  */
 
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { Events } from '@wailsio/runtime'
 import { api, toPoolSnapshot } from '../services/api'
 import type { PoolSnapshot } from '../types'
@@ -34,9 +34,6 @@ export function useProxy() {
   const { notify } = useToast()
 
   const snapshot = ref<PoolSnapshot>(emptySnapshot())
-  const starting = ref(false)
-
-  const total = computed(() => snapshot.value.primary.length + snapshot.value.backup.length)
 
   function subscribe(): void {
     // 事件负载类型由绑定生成器提供，这里不手写标注，避免与 nil 切片等细节脱节
@@ -45,28 +42,20 @@ export function useProxy() {
     })
   }
 
-  /** 首次进入页面时拉一次，避免错过订阅前的事件 */
-  async function refresh(): Promise<void> {
-    try {
-      snapshot.value = await api.proxy.snapshot()
-    } catch (e) {
-      notify(`读取 IP 池失败：${e}`, 'error')
-    }
-  }
-
   async function start(text: string): Promise<void> {
     if (snapshot.value.running) return
     if (!text.trim()) {
-      notify('没有可用的 IP 来源，请先在测速页导入或加载内置网段', 'error')
+      notify('没有可用的 IP 来源，请先在上方导入或加载内置网段', 'error')
       return
     }
-    starting.value = true
+
+    // 乐观切换：点击后立刻进入运行态，按钮马上变成「停止」，随时可中断
+    snapshot.value = { ...snapshot.value, running: true, phase: 'scanning' }
     try {
       await api.proxy.startPool(text)
     } catch (e) {
-      notify(`启动 IP 池失败：${e}`, 'error')
-    } finally {
-      starting.value = false
+      snapshot.value = { ...snapshot.value, running: false, phase: 'idle' }
+      notify(`启动代理失败：${e}`, 'error')
     }
   }
 
@@ -74,7 +63,7 @@ export function useProxy() {
     try {
       await api.proxy.stopPool()
     } catch (e) {
-      notify(`停止 IP 池失败：${e}`, 'error')
+      notify(`停止代理失败：${e}`, 'error')
     }
   }
 
@@ -87,5 +76,5 @@ export function useProxy() {
     }
   }
 
-  return { snapshot, starting, total, subscribe, refresh, start, stop, recheck }
+  return { snapshot, subscribe, start, stop, recheck }
 }

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import StatTile from './StatTile.vue'
-import type { PoolSnapshot } from '../types'
+import type { PoolNode, PoolSnapshot } from '../types'
 
 const props = defineProps<{
   snapshot: PoolSnapshot
   /** 当前 IP 来源的候选数量，为 0 时无法启动 */
   ipCount: number
-  starting: boolean
 }>()
 
 const emit = defineEmits<{
@@ -18,10 +17,17 @@ const emit = defineEmits<{
   openDir: []
 }>()
 
+interface NodeGroup {
+  key: string
+  title: string
+  tagClass: string
+  tagText: string
+  nodes: PoolNode[]
+  emptyHint: string
+}
+
 const scanning = computed(() => props.snapshot.phase === 'scanning')
-const hasNodes = computed(
-  () => props.snapshot.primary.length + props.snapshot.backup.length > 0,
-)
+const hasNodes = computed(() => props.snapshot.primary.length + props.snapshot.backup.length > 0)
 
 const scanPercent = computed(() => {
   const { scanDone, scanTotal } = props.snapshot
@@ -29,14 +35,39 @@ const scanPercent = computed(() => {
   return Math.min(100, Math.round((scanDone / scanTotal) * 100))
 })
 
-const total = computed(
-  () => props.snapshot.primary.length + props.snapshot.backup.length,
-)
-
 const statusText = computed(() => {
   if (props.snapshot.phase === 'scanning') return '扫描中'
   if (props.snapshot.running) return '运行中'
   return '已停止'
+})
+
+const emptyHint = computed(() => {
+  const current = props.snapshot
+  if (!current.running) return '未启动'
+  if (current.phase === 'scanning') return '扫描中，暂无节点'
+  return '扫描完成，但没有节点达标'
+})
+
+const groups = computed<NodeGroup[]>(() => {
+  const current = props.snapshot
+  return [
+    {
+      key: 'primary',
+      title: `主选负载均衡池（${current.primary.length} / ${current.primaryTarget}）`,
+      tagClass: 'qualified',
+      tagText: '主选',
+      nodes: current.primary,
+      emptyHint: emptyHint.value,
+    },
+    {
+      key: 'backup',
+      title: `备用池（${current.backup.length} / ${current.backupTarget}）`,
+      tagClass: 'excluded',
+      tagText: '备用',
+      nodes: current.backup,
+      emptyHint: emptyHint.value,
+    },
+  ]
 })
 
 function formatLatency(value: number): string {
@@ -59,11 +90,6 @@ function formatTime(ms: number): string {
   <section class="card">
     <header class="card-head">
       <div class="card-title">
-        <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M18 16.1a3 3 0 0 0-2.1.9l-6.1-3.6a3.1 3.1 0 0 0 0-2.8l6.1-3.6a3 3 0 1 0-1-2.1c0 .3 0 .5.1.8L8.9 9.3a3 3 0 1 0 0 5.4l6.1 3.6c0 .2-.1.5-.1.7a3 3 0 1 0 3-3z"
-          />
-        </svg>
         <div>
           <h2>代理</h2>
           <p class="card-sub">
@@ -71,21 +97,18 @@ function formatTime(ms: number): string {
           </p>
         </div>
       </div>
-      <span class="chip" :class="snapshot.running ? 'live' : ''">
-        <i v-if="snapshot.running" class="dot" />
-        {{ statusText }}
-      </span>
+      <span class="chip" :class="snapshot.running ? 'live' : ''">{{ statusText }}</span>
     </header>
 
     <div class="row-actions">
       <button
         v-if="!snapshot.running"
         class="btn primary"
-        :disabled="starting || !ipCount"
+        :disabled="!ipCount"
         @click="emit('start')"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7V5z" /></svg>
-        {{ starting ? '启动中…' : '启动代理' }}
+        启动代理
       </button>
       <button v-else class="btn danger" @click="emit('stop')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z" /></svg>
@@ -122,62 +145,41 @@ function formatTime(ms: number): string {
       Cloudflare 上的站点
     </p>
 
-    <div v-if="!scanning" class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>分组</th>
-            <th>IP</th>
-            <th>机房</th>
-            <th class="num-col">延迟 (ms)</th>
-            <th class="num-col">丢包率</th>
-            <th class="num-col">采样</th>
-            <th>最后检查</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="node in snapshot.primary" :key="`p-${node.ip}`">
-            <td>
-              <span v-if="node.isolated" class="tag over">隔离</span>
-              <span v-else class="tag qualified">主选</span>
-            </td>
-            <td class="mono">{{ node.ip }}</td>
-            <td class="mono dim">{{ node.colo || '—' }}</td>
-            <td class="num-col mono">{{ formatLatency(node.latency) }}</td>
-            <td class="num-col mono">{{ formatLoss(node.lossRate) }}</td>
-            <td class="num-col mono dim">{{ node.samples }}</td>
-            <td class="dim">{{ formatTime(node.updatedAt) }}</td>
-          </tr>
-          <tr v-for="node in snapshot.backup" :key="`b-${node.ip}`">
-            <td>
-              <span v-if="node.isolated" class="tag over">隔离</span>
-              <span v-else class="tag excluded">备用</span>
-            </td>
-            <td class="mono">{{ node.ip }}</td>
-            <td class="mono dim">{{ node.colo || '—' }}</td>
-            <td class="num-col mono">{{ formatLatency(node.latency) }}</td>
-            <td class="num-col mono">{{ formatLoss(node.lossRate) }}</td>
-            <td class="num-col mono dim">{{ node.samples }}</td>
-            <td class="dim">{{ formatTime(node.updatedAt) }}</td>
-          </tr>
-
-          <tr v-if="!hasNodes">
-            <td colspan="7" class="empty">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM13.2 17h-2.4v-6h2.4v6z"
-                />
-              </svg>
-              <span v-if="snapshot.running">正在扫描候选 IP…</span>
-              <span v-else-if="snapshot.phase === 'ready'">
-                扫描完成但没有节点达标，请放宽延迟上限或调整 IP 来源
-              </span>
-              <span v-else>点击「启动代理」开始</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <template v-for="group in groups" :key="group.key">
+      <div class="table-wrap">
+        <h3 class="group-title">{{ group.title }}</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>分组</th>
+              <th>IP</th>
+              <th>机房</th>
+              <th class="num-col">延迟 (ms)</th>
+              <th class="num-col">丢包率</th>
+              <th class="num-col">采样</th>
+              <th>最后检查</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="node in group.nodes" :key="node.ip">
+              <td>
+                <span v-if="node.isolated" class="tag over">隔离</span>
+                <span v-else class="tag" :class="group.tagClass">{{ group.tagText }}</span>
+              </td>
+              <td class="mono">{{ node.ip }}</td>
+              <td class="mono dim">{{ node.colo || '—' }}</td>
+              <td class="num-col mono">{{ formatLatency(node.latency) }}</td>
+              <td class="num-col mono">{{ formatLoss(node.lossRate) }}</td>
+              <td class="num-col mono dim">{{ node.samples }}</td>
+              <td class="dim">{{ formatTime(node.updatedAt) }}</td>
+            </tr>
+            <tr v-if="!group.nodes.length">
+              <td colspan="7" class="empty">{{ group.emptyHint }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
 
     <div v-if="snapshot.evictions.length" class="evict-log">
       <h3 class="group-title">最近淘汰</h3>

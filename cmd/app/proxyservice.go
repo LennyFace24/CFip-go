@@ -171,6 +171,9 @@ func (s *ProxyService) StartPool(text string) error {
 	s.mu.Unlock()
 
 	go s.run(ctx, pool, candidates, cfg)
+
+	// 立刻推送一次，让界面在点击后马上进入运行态（而不是等第一次扫描快照）
+	s.emitUpdate()
 	return nil
 }
 
@@ -324,18 +327,12 @@ func (s *ProxyService) checkAndRefill(
 
 // scanFromCursor 从候选游标处继续扫描，直到候选耗尽或池不再缺节点。
 func (s *ProxyService) scanFromCursor(ctx context.Context, pool *core.Pool, candidates *candidateQueue, cfg *config.Config) {
-	lastEmit := time.Now()
-
 	for ctx.Err() == nil && pool.NeedsMore() {
 		batch := candidates.take(scanBatch)
 		if len(batch) == 0 {
-			return
+			break
 		}
 		s.probeAndFill(ctx, pool, batch, cfg)
-		if time.Since(lastEmit) >= poolUpdateThrottle {
-			s.emitUpdate()
-			lastEmit = time.Now()
-		}
 	}
 	s.emitUpdate()
 }
@@ -357,22 +354,23 @@ func (s *ProxyService) probeAndFill(ctx context.Context, pool *core.Pool, batch 
 
 	limitSec := float64(cfg.Latency) / 1000
 	whitelist := core.SplitColos(cfg.Colo)
+	lastEmit := time.Now()
 
 	for r := range core.StreamLatency(scanCtx, batch, cfg.Concurrency, nil) {
 		if ctx.Err() != nil {
 			return
 		}
 		s.addScanDone(1)
-		if r.Latency < 0 || r.Latency > limitSec {
-			continue
+
+		if r.Latency >= 0 && r.Latency <= limitSec && core.ColoAllowed(r.Colo, whitelist) && pool.NeedsMore() {
+			pool.TryAdd(r.IP.IP, r.Latency, r.Colo)
 		}
-		if !core.ColoAllowed(r.Colo, whitelist) {
-			continue
+
+		// 扫描过程中持续推送，界面能看着节点逐个就位，而不是扫完才一次性出现
+		if time.Since(lastEmit) >= poolUpdateThrottle {
+			s.emitUpdate()
+			lastEmit = time.Now()
 		}
-		if !pool.NeedsMore() {
-			return
-		}
-		pool.TryAdd(r.IP.IP, r.Latency, r.Colo)
 	}
 }
 

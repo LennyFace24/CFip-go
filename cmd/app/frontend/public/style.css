@@ -166,30 +166,6 @@ p { margin: 0; }
     border-right: 1px solid var(--border);
 }
 
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    padding: 4px 8px;
-}
-
-.brand-logo {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #c3aef5, #8fd0f0);
-    color: #251a33;
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 0.5px;
-}
-
-.brand-text { display: flex; flex-direction: column; line-height: 1.25; }
-.brand-name { font-weight: 650; font-size: 14.5px; }
-.brand-sub { color: var(--text-faint); font-size: 11.5px; }
-
 .nav { display: flex; flex-direction: column; gap: 4px; }
 
 .nav-item {
@@ -276,25 +252,9 @@ p { margin: 0; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 
 .chip.live {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
     background: var(--primary-soft);
     color: var(--primary);
     border-color: transparent;
-}
-
-.dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
 }
 
 .row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -625,6 +585,9 @@ tbody tr:hover .icon-btn { opacity: 1; }
 /* 行内提示文字，用于补充说明当前状态 */
 .hint-text { color: var(--text-faint); font-size: 12px; }
 .warn-text { color: var(--warn); font-size: 12px; }
+
+/* 表上方的小标题（主选 / 备用 / 最近淘汰） */
+.table-wrap > .group-title { padding: 11px 12px 0; }
 
 /* 淘汰记录 */
 .evict-log { display: flex; flex-direction: column; gap: 9px; }
