@@ -12,7 +12,7 @@ func newTestModel() *Model {
 	cfg := &config.Config{Latency: 500, Concurrency: 2, Timeout: 500, Number: 10}
 	ips := []core.IP{{IP: "1.1.1.1"}, {IP: "2.2.2.2"}}
 	m := New(cfg, ips)
-	m.probe = func(ip core.IP) float64 { return 1.0 }
+	m.probe = func(ip core.IP) core.ProbeResult { return core.ProbeResult{Latency: 1.0, Colo: "HKG"} }
 	return m
 }
 

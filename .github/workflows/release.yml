@@ -2,6 +2,8 @@ name: Build Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -17,15 +19,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            name: windows-amd64
-            asset: CFip-windows-amd64.zip
+          # macOS runner 为 Apple Silicon，产物固定为 arm64
           - os: macos-latest
             name: darwin-arm64
             asset: CFip-darwin-arm64.tar.gz
+            # 打包成 .app：裸二进制在 macOS 上会被 Gatekeeper 拦截
+            target: wails3 task darwin:package
+            output: cmd/app/bin/CFip.app
           - os: ubuntu-latest
             name: linux-amd64
             asset: CFip-linux-amd64.tar.gz
+            target: wails3 task build
+            output: cmd/app/bin/CFip
+          - os: windows-latest
+            name: windows-amd64
+            asset: CFip-windows-amd64.zip
+            target: wails3 task build
+            output: cmd/app/bin/CFip.exe
 
     steps:
       - name: 检出代码
@@ -48,34 +58,44 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
 
+      # 版本必须与 cmd/app/go.mod 要求的 Wails 版本一致，避免上游发布破坏构建
       - name: 安装 Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
 
-      - name: 安装前端依赖
-        working-directory: cmd/app/frontend
-        run: npm install
+      - name: 运行核心测试
+        run: go test ./src/...
 
-      # cmd/app 是嵌套 Go 模块，需在子目录内构建
+      # cmd/app 是嵌套模块，前端绑定由 wails3 task 自动生成
       - name: 构建应用
         working-directory: cmd/app
-        run: wails3 task build
-
-      - name: 列出产物
-        shell: bash
-        run: ls -R bin
+        run: ${{ matrix.target }}
 
       - name: 打包 (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path bin/CFip.exe -DestinationPath ${{ matrix.asset }}
+        run: Compress-Archive -Path ${{ matrix.output }} -DestinationPath ${{ matrix.asset }}
 
       - name: 打包 (macOS / Linux)
         if: runner.os != 'Windows'
-        run: tar -czf ${{ matrix.asset }} -C bin CFip
+        shell: bash
+        run: |
+          cd "$(dirname "${{ matrix.output }}")"
+          tar -czf "$GITHUB_WORKSPACE/${{ matrix.asset }}" "$(basename "${{ matrix.output }}")"
 
+      # 分支推送没有 tag，action-gh-release 会报错，因此发布只走打标签
       - name: 上传到 Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.asset }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 分支构建的产物留在 Actions 页面，方便随时下载验证
+      - name: 上传构建产物
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
