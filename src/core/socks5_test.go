@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -259,7 +260,7 @@ func TestForwarderReportsFailureWhenPoolEmpty(t *testing.T) {
 	}
 }
 
-func TestForwarderDropsUnreachableNode(t *testing.T) {
+func TestForwarderIsolatesUnreachableNode(t *testing.T) {
 	pool := NewPool(PoolConfig{PrimarySize: 1, BackupSize: 0, Cooldown: time.Minute})
 	pool.TryAdd("1.2.3.4", 0.05, "HKG")
 
@@ -281,7 +282,60 @@ func TestForwarderDropsUnreachableNode(t *testing.T) {
 	if rep := socks5Connect(t, conn, "example.com", 443); rep != socks5RepHostUnreachable {
 		t.Fatalf("want %#x, got %#x", socks5RepHostUnreachable, rep)
 	}
-	if pool.Contains("1.2.3.4") {
-		t.Error("拨号失败的节点应被移出池")
+
+	node, ok := pool.Get("1.2.3.4")
+	if !ok {
+		t.Fatal("节点应留在池中，交由健康检查确认是否真的失效")
+	}
+	if !node.Isolated {
+		t.Error("拨号失败的节点应被隔离")
+	}
+}
+
+func TestForwarderTriesNextNodeOnFailure(t *testing.T) {
+	echoAddr := startEcho(t)
+
+	pool := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Minute})
+	pool.TryAdd("1.1.1.1", 0.05, "") // 延迟最低，但会拨号失败
+	pool.TryAdd("2.2.2.2", 0.20, "")
+
+	forwarder := NewForwarder(pool)
+	var mu sync.Mutex
+	var dialed []string
+	forwarder.SetDial(func(_ context.Context, _, address string) (net.Conn, error) {
+		mu.Lock()
+		dialed = append(dialed, address)
+		mu.Unlock()
+
+		if strings.HasPrefix(address, "1.1.1.1:") {
+			return nil, errors.New("首选节点拨不通")
+		}
+		return net.Dial("tcp", echoAddr)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = forwarder.Listen(ctx, "127.0.0.1:0") }()
+
+	conn, err := net.Dial("tcp", waitForAddr(t, forwarder))
+	if err != nil {
+		t.Fatalf("连接转发器失败: %v", err)
+	}
+	defer conn.Close()
+
+	if rep := socks5Connect(t, conn, "example.com", 443); rep != socks5RepSucceeded {
+		t.Fatalf("应回退到次优节点并成功, 应答码 %#x", rep)
+	}
+
+	mu.Lock()
+	got := append([]string(nil), dialed...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != "1.1.1.1:443" || got[1] != "2.2.2.2:443" {
+		t.Fatalf("应按延迟升序依次尝试, got %v", got)
+	}
+
+	used, _ := forwarder.LastUsed()
+	if used != "2.2.2.2" {
+		t.Errorf("最近使用的节点应为 2.2.2.2, got %q", used)
 	}
 }

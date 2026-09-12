@@ -134,6 +134,16 @@ export interface PoolSnapshot {
     "ListenAddr": string;
     "ListenError": string;
     "ActiveConns": number;
+
+    /**
+     * 最近一次成功转发的节点，供界面高亮
+     */
+    "LastUsedIP": string;
+
+    /**
+     * Unix 毫秒
+     */
+    "LastUsedAt": number;
     "Primary": PoolNode[] | null;
     "Backup": PoolNode[] | null;
     "Evictions": EvictionRecord[] | null;

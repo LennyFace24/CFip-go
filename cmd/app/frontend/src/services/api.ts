@@ -109,6 +109,8 @@ export function toPoolSnapshot(dto: PoolSnapshotDTO): PoolSnapshot {
     listenAddr: dto.ListenAddr ?? '',
     listenError: dto.ListenError ?? '',
     activeConns: dto.ActiveConns ?? 0,
+    lastUsedIp: dto.LastUsedIP ?? '',
+    lastUsedAt: dto.LastUsedAt ?? 0,
     primary: (dto.Primary ?? []).map(toPoolNode),
     backup: (dto.Backup ?? []).map(toPoolNode),
     evictions: (dto.Evictions ?? []).map(toEviction),

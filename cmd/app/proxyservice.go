@@ -80,6 +80,8 @@ type PoolSnapshot struct {
 	ListenAddr    string // 本地 SOCKS5 监听地址；空串表示未监听
 	ListenError   string
 	ActiveConns   int
+	LastUsedIP    string // 最近一次成功转发的节点，供界面高亮
+	LastUsedAt    int64  // Unix 毫秒
 	Primary       []PoolNode
 	Backup        []PoolNode
 	Evictions     []EvictionRecord
@@ -242,6 +244,10 @@ func (s *ProxyService) Snapshot() PoolSnapshot {
 	if s.forwarder != nil {
 		snapshot.ListenAddr = s.forwarder.Addr()
 		snapshot.ActiveConns = s.forwarder.ActiveConns()
+		if ip, at := s.forwarder.LastUsed(); ip != "" {
+			snapshot.LastUsedIP = ip
+			snapshot.LastUsedAt = at.UnixMilli()
+		}
 	}
 	return snapshot
 }

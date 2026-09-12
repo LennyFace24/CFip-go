@@ -70,6 +70,15 @@ const groups = computed<NodeGroup[]>(() => {
   ]
 })
 
+/** 最近一次转发过的节点高亮显示；超过该时长就不再视为「正在用」 */
+const inUseWindowMs = 10000
+
+function isInUse(node: PoolNode): boolean {
+  const current = props.snapshot
+  if (!current.lastUsedIp || node.ip !== current.lastUsedIp) return false
+  return Date.now() - current.lastUsedAt < inUseWindowMs
+}
+
 function formatLatency(value: number): string {
   return value >= 0 ? value.toFixed(1) : '—'
 }
@@ -161,9 +170,14 @@ function formatTime(ms: number): string {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="node in group.nodes" :key="node.ip">
+            <tr
+              v-for="node in group.nodes"
+              :key="node.ip"
+              :class="{ 'in-use': isInUse(node) }"
+            >
               <td>
                 <span v-if="node.isolated" class="tag over">隔离</span>
+                <span v-else-if="isInUse(node)" class="tag live">使用中</span>
                 <span v-else class="tag" :class="group.tagClass">{{ group.tagText }}</span>
               </td>
               <td class="mono">{{ node.ip }}</td>

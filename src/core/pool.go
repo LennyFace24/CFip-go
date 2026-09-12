@@ -2,15 +2,11 @@ package core
 
 import (
 	"math"
-	"math/rand"
 	"sync"
 	"time"
 )
 
 const (
-	// pickWindow 从延迟最低的若干个节点里随机挑选，避免所有流量都打向同一个 IP
-	pickWindow = 3
-
 	// sampleWindow EWMA 的样本窗口：样本数达到该值后不再增长
 	sampleWindow = 20
 	// ewmaAlpha 指数加权移动平均的衰减因子，与 sampleWindow 对应
@@ -250,22 +246,58 @@ func (p *Pool) Promote() bool {
 	return true
 }
 
-// Pick 选出一个可用节点：主选优先，主选无可用的时退到备用；
-// 两边都只剩隔离节点时，退而选一个隔离节点，避免完全没有出口。
+// Pick 选出一个可用节点，等价于 PickOrdered(1)。
 func (p *Pool) Pick() *Node {
+	nodes := p.PickOrdered(1)
+	if len(nodes) == 0 {
+		return nil
+	}
+	return nodes[0]
+}
+
+// PickOrdered 按延迟升序返回最多 n 个候选节点，供转发层依次尝试。
+//
+// 排序规则：主选优先于备用，组内按延迟升序；隔离节点只在前面的候选不足时才兜底补上，
+// 避免整池都隔离时完全没有出口。
+func (p *Pool) PickOrdered(n int) []*Node {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if node := pickFrom(p.primary, false); node != nil {
-		return node
+	if n <= 0 {
+		return nil
 	}
-	if node := pickFrom(p.backup, false); node != nil {
-		return node
+
+	out := append(selectableNodes(p.primary), selectableNodes(p.backup)...)
+
+	if len(out) < n {
+		for _, node := range p.primary {
+			if node.Isolated {
+				out = append(out, node)
+			}
+		}
+		for _, node := range p.backup {
+			if node.Isolated {
+				out = append(out, node)
+			}
+		}
 	}
-	if node := pickFrom(p.primary, true); node != nil {
-		return node
+
+	if len(out) > n {
+		out = out[:n]
 	}
-	return pickFrom(p.backup, true)
+	return out
+}
+
+// selectableNodes 返回未隔离的节点，按延迟升序
+func selectableNodes(nodes []*Node) []*Node {
+	out := make([]*Node, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.Isolated {
+			out = append(out, node)
+		}
+	}
+	sortNodes(out)
+	return out
 }
 
 // Snapshot 返回按「更优者在前」的主选与备用副本。
@@ -435,31 +467,6 @@ func bestOf(nodes []*Node) *Node {
 		}
 	}
 	return best
-}
-
-// pickFrom 从延迟最低的若干个可用节点里随机挑一个。
-// includeIsolated 为 true 时也接受隔离节点（兜底出口）。
-func pickFrom(nodes []*Node, includeIsolated bool) *Node {
-	candidates := make([]*Node, 0, len(nodes))
-	for _, node := range nodes {
-		if node.Isolated && !includeIsolated {
-			continue
-		}
-		candidates = append(candidates, node)
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-
-	sorted := make([]*Node, len(candidates))
-	copy(sorted, candidates)
-	sortNodes(sorted)
-
-	limit := pickWindow
-	if len(sorted) < limit {
-		limit = len(sorted)
-	}
-	return sorted[rand.Intn(limit)]
 }
 
 func sortNodes(nodes []*Node) {

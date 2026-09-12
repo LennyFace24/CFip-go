@@ -175,6 +175,53 @@ func TestPoolPickPrefersPrimaryAndFallsBack(t *testing.T) {
 	}
 }
 
+func TestPoolPickOrderedByLatency(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 3, BackupSize: 1, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.3, "")
+	p.TryAdd("2.2.2.2", 0.1, "")
+	p.TryAdd("3.3.3.3", 0.2, "")
+	p.TryAdd("4.4.4.4", 0.05, "") // 备用，延迟最低但应排在主选之后
+
+	nodes := p.PickOrdered(4)
+	want := []string{"2.2.2.2", "3.3.3.3", "1.1.1.1", "4.4.4.4"}
+	if len(nodes) != len(want) {
+		t.Fatalf("want %v, got %d 个", want, len(nodes))
+	}
+	for i, ip := range want {
+		if nodes[i].IP != ip {
+			t.Fatalf("want %v, got %v", want, nodeIPs(nodes))
+		}
+	}
+}
+
+func TestPoolPickOrderedLimitsAndFallsBackToIsolated(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Second})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.2, "")
+	p.Isolate("1.1.1.1")
+
+	// 只有 2.2.2.2 可用，请求 2 个时用隔离节点兜底
+	nodes := p.PickOrdered(2)
+	if len(nodes) != 2 {
+		t.Fatalf("want 2, got %d", len(nodes))
+	}
+	if nodes[0].IP != "2.2.2.2" {
+		t.Errorf("可用节点应排在前面, got %s", nodes[0].IP)
+	}
+
+	if got := p.PickOrdered(0); got != nil {
+		t.Errorf("n=0 应返回 nil, got %v", got)
+	}
+}
+
+func nodeIPs(nodes []*Node) []string {
+	out := make([]string, len(nodes))
+	for i, node := range nodes {
+		out[i] = node.IP
+	}
+	return out
+}
+
 func TestPoolPickSkipsIsolatedNode(t *testing.T) {
 	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Second})
 	p.TryAdd("1.1.1.1", 0.1, "")

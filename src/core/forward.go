@@ -29,10 +29,12 @@ type DialFunc func(ctx context.Context, network, address string) (net.Conn, erro
 type Forwarder struct {
 	pool *Pool
 
-	mu     sync.Mutex
-	dial   DialFunc
-	ln     net.Listener
-	active int
+	mu         sync.Mutex
+	dial       DialFunc
+	ln         net.Listener
+	active     int
+	lastUsed   string
+	lastUsedAt time.Time
 }
 
 func NewForwarder(pool *Pool) *Forwarder {
@@ -121,8 +123,10 @@ func (f *Forwarder) serve(ctx context.Context, client net.Conn) {
 	pipe(client, upstream)
 }
 
-// connect 从池中选节点拨号。拨不通的节点会被移出池并换下一个重试，
-// 避免把连接交给已经失效的节点。
+// connect 依次尝试延迟最低的若干节点，返回第一个拨通的连接。
+//
+// 拨不通的节点先隔离而不是直接淘汰：交给后续健康检查确认是真的失效还是临时抖动，
+// 同时避免每次连接都在同一个坏节点上白等一次超时。
 func (f *Forwarder) connect(ctx context.Context, port uint16) (net.Conn, error) {
 	if f.pool == nil {
 		return nil, errors.New("IP 池未初始化")
@@ -133,24 +137,36 @@ func (f *Forwarder) connect(ctx context.Context, port uint16) (net.Conn, error) 
 	f.mu.Unlock()
 
 	var lastErr error
-	for i := 0; i < forwardMaxAttempts; i++ {
-		node := f.pool.Pick()
-		if node == nil {
-			if lastErr != nil {
-				return nil, lastErr
-			}
-			return nil, errors.New("IP 池中没有可用节点")
-		}
-
+	for _, node := range f.pool.PickOrdered(forwardMaxAttempts) {
 		address := net.JoinHostPort(node.IP, strconv.Itoa(int(port)))
 		conn, err := dial(ctx, "tcp", address)
 		if err == nil {
+			f.markUsed(node.IP)
 			return conn, nil
 		}
 		lastErr = err
-		f.pool.Remove(node.IP)
+		f.pool.Isolate(node.IP)
+	}
+
+	if lastErr == nil {
+		return nil, errors.New("IP 池中没有可用节点")
 	}
 	return nil, lastErr
+}
+
+// markUsed 记录最近一次成功转发的节点，供界面高亮
+func (f *Forwarder) markUsed(ip string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastUsed = ip
+	f.lastUsedAt = time.Now()
+}
+
+// LastUsed 返回最近一次成功转发的节点与时间；从未转发过时返回空串
+func (f *Forwarder) LastUsed() (string, time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastUsed, f.lastUsedAt
 }
 
 func (f *Forwarder) addActive(delta int) {

@@ -24,6 +24,8 @@ function emptySnapshot(): PoolSnapshot {
     listenAddr: '',
     listenError: '',
     activeConns: 0,
+    lastUsedIp: '',
+    lastUsedAt: 0,
     primary: [],
     backup: [],
     evictions: [],

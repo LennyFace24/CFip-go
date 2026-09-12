@@ -51,6 +51,10 @@ export interface PoolSnapshot {
   listenError: string
   /** 当前正在转发的连接数 */
   activeConns: number
+  /** 最近一次成功转发的节点，用于界面高亮 */
+  lastUsedIp: string
+  /** 最近一次转发的时间，Unix 毫秒 */
+  lastUsedAt: number
   primary: PoolNode[]
   backup: PoolNode[]
   evictions: EvictionRecord[]
@@ -191,6 +195,8 @@ export interface PoolSnapshotDTO {
   ListenAddr: string
   ListenError: string
   ActiveConns: number
+  LastUsedIP: string
+  LastUsedAt: number
   Primary: PoolNodeDTO[] | null
   Backup: PoolNodeDTO[] | null
   Evictions: EvictionRecordDTO[] | null
