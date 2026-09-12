@@ -200,6 +200,38 @@ func minActiveTarget(primarySize int) int {
 	return (primarySize + 1) / 2
 }
 
+// ReplaceWorst 用新节点替换主选中最差的节点，返回被替换掉的 IP。
+//
+// 仅当新节点确实更优时才替换——判定复用 CompareEviction，延迟差不足 20ms 时会转而比较丢包。
+// 被替换的节点进入冷却，避免下一轮扫描又把它捞回来造成来回抖动。
+func (p *Pool) ReplaceWorst(ip string, latency float64, colo string) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cleanCoolingLocked()
+
+	if p.findLocked(ip) != nil {
+		return "", false
+	}
+	if _, cooling := p.cooling[ip]; cooling {
+		return "", false
+	}
+
+	worst := worstOf(p.primary)
+	if worst == nil {
+		return "", false
+	}
+
+	candidate := Node{IP: ip, Latency: latency, AvgLatency: latency, Colo: colo}
+	if CompareEviction(candidate, *worst) >= 0 {
+		return "", false
+	}
+
+	removeFrom(&p.primary, worst.IP)
+	p.cooling[worst.IP] = time.Now().Add(p.cfg.Cooldown)
+	p.primary = append(p.primary, newNode(ip, latency, colo))
+	return worst.IP, true
+}
+
 // Promote 把备用中最优的节点提升到主选；主选已满或无备用时返回 false。
 func (p *Pool) Promote() bool {
 	p.mu.Lock()
@@ -381,6 +413,17 @@ func sign(v float64) int {
 		return -1
 	}
 	return 0
+}
+
+// worstOf 取一组节点中最差的一个（CompareEviction 最大者）；隔离节点视为最差
+func worstOf(nodes []*Node) *Node {
+	var worst *Node
+	for _, node := range nodes {
+		if worst == nil || CompareEviction(*node, *worst) > 0 {
+			worst = node
+		}
+	}
+	return worst
 }
 
 // bestOf 取一组节点中最优的一个（CompareEviction 最小者）

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -21,6 +22,13 @@ const (
 
 	// scanBatch 每批从候选队列取多少个 IP 去探测
 	scanBatch = 200
+
+	// optimizeBatch 池满后每轮优化扫描探测多少候选
+	optimizeBatch = 50
+
+	// optimizeInterval 池满后多久扫一批候选。
+	// 池满说明已有可用节点，不急，低频慢慢碰运气即可。
+	optimizeInterval = 5 * time.Second
 
 	// maxScanRounds 候选耗尽后最多再循环几轮，避免无休止重扫
 	maxScanRounds = 2
@@ -102,11 +110,14 @@ func (q *candidateQueue) take(size int) []core.IP {
 	return batch
 }
 
-// rewind 回到队首，用于候选耗尽后重新扫描。
+// rewind 回到队首并重新打乱，使每轮扫描按不同的顺序碰运气。
 func (q *candidateQueue) rewind() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.next = 0
+	rand.Shuffle(len(q.items), func(i, j int) {
+		q.items[i], q.items[j] = q.items[j], q.items[i]
+	})
 }
 
 // ProxyService 构建并长期维护 IP 池，并在池有节点后开启本地 SOCKS5 转发。
@@ -291,16 +302,82 @@ func (s *ProxyService) runHealthLoop(
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 
+	// 池满之后仍在后台低频扫候选，遇到明显更优的就换掉池中最差的节点
+	optimizeTicker := time.NewTicker(optimizeInterval)
+	defer optimizeTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-timer.C:
+			s.checkAndRefill(ctx, pool, candidates, checker, cfg)
+			timer.Reset(interval)
 		case <-trigger:
+			// 用户主动刷新：复测一轮，并立刻找一批更优的候选
+			s.checkAndRefill(ctx, pool, candidates, checker, cfg)
+			s.optimizeOnce(ctx, pool, candidates, cfg)
+			timer.Reset(interval)
+		case <-optimizeTicker.C:
+			s.optimizeOnce(ctx, pool, candidates, cfg)
 		}
-		s.checkAndRefill(ctx, pool, candidates, checker, cfg)
-		timer.Reset(interval)
 	}
+}
+
+// optimizeOnce 抽一批候选探测，遇到明显更优的就替换掉池中最差的节点。
+//
+// 候选动辄数百上千，为每个都维护探索统计并不划算；均匀随机抽样是性价比最高的策略——
+// 池满之后已有可用节点，不急，慢慢碰运气即可。
+func (s *ProxyService) optimizeOnce(ctx context.Context, pool *core.Pool, candidates *candidateQueue, cfg *config.Config) {
+	if ctx.Err() != nil || pool.NeedsMore() {
+		return
+	}
+
+	batch := candidates.take(optimizeBatch)
+	if len(batch) == 0 {
+		candidates.rewind()
+		return
+	}
+	s.probeAndReplace(ctx, pool, batch, cfg)
+}
+
+// probeAndReplace 探测一批候选，把优于池中最差节点的结果换进来。
+func (s *ProxyService) probeAndReplace(ctx context.Context, pool *core.Pool, batch []core.IP, cfg *config.Config) {
+	scanCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	limitSec := float64(cfg.Latency) / 1000
+	whitelist := core.SplitColos(cfg.Colo)
+	lastEmit := time.Now()
+
+	for r := range core.StreamLatency(scanCtx, batch, cfg.Concurrency, nil) {
+		if ctx.Err() != nil {
+			return
+		}
+		if r.Latency < 0 || r.Latency > limitSec {
+			continue
+		}
+		if !core.ColoAllowed(r.Colo, whitelist) {
+			continue
+		}
+		if pool.Contains(r.IP.IP) {
+			continue
+		}
+
+		if replaced, ok := pool.ReplaceWorst(r.IP.IP, r.Latency, r.Colo); ok {
+			s.appendEviction(EvictionRecord{
+				IP:     replaced,
+				Reason: "被更优节点替换",
+				Time:   time.Now().UnixMilli(),
+			})
+		}
+
+		if time.Since(lastEmit) >= poolUpdateThrottle {
+			s.emitUpdate()
+			lastEmit = time.Now()
+		}
+	}
+	s.emitUpdate()
 }
 
 // checkAndRefill 执行一轮健康检查，记录淘汰并在池出现空缺时补测。

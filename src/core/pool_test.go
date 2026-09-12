@@ -307,6 +307,69 @@ func TestPoolSnapshotPutsIsolatedLast(t *testing.T) {
 	}
 }
 
+func TestPoolReplaceWorstSwapsBetterNode(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Minute})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.5, "") // 最差
+
+	replaced, ok := p.ReplaceWorst("3.3.3.3", 0.12, "HKG")
+	if !ok {
+		t.Fatal("更优的节点应替换成功")
+	}
+	if replaced != "2.2.2.2" {
+		t.Fatalf("应替换掉最差的 2.2.2.2, got %s", replaced)
+	}
+	if !p.Contains("3.3.3.3") || p.Contains("2.2.2.2") {
+		t.Fatal("池内容应为 1.1.1.1 + 3.3.3.3")
+	}
+	// 被替换者进冷却，避免下一轮又被捞回来
+	if got := p.TryAdd("2.2.2.2", 0.5, ""); got != InCooldown {
+		t.Fatalf("被替换的节点应进入冷却, got %v", got)
+	}
+}
+
+func TestPoolReplaceWorstRejectsWhenNotBetter(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Minute})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.2, "")
+
+	// 延迟差不足 20ms 且丢包相同 → 视为等价，不替换
+	if _, ok := p.ReplaceWorst("3.3.3.3", 0.19, ""); ok {
+		t.Fatal("差异不显著时不应替换")
+	}
+	if p.Contains("3.3.3.3") {
+		t.Error("未替换时不应把新节点放入池中")
+	}
+}
+
+func TestPoolReplaceWorstPrefersIsolated(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Minute})
+	p.TryAdd("1.1.1.1", 0.05, "")
+	p.TryAdd("2.2.2.2", 0.06, "")
+	p.Isolate("2.2.2.2")
+
+	// 隔离节点不承载流量，应优先被换掉，哪怕它的延迟更好
+	replaced, ok := p.ReplaceWorst("3.3.3.3", 0.1, "")
+	if !ok || replaced != "2.2.2.2" {
+		t.Fatalf("应优先替换隔离节点, got %q ok=%v", replaced, ok)
+	}
+}
+
+func TestPoolReplaceWorstSkipsKnownAndCooling(t *testing.T) {
+	p := NewPool(PoolConfig{PrimarySize: 2, BackupSize: 0, Cooldown: time.Minute})
+	p.TryAdd("1.1.1.1", 0.1, "")
+	p.TryAdd("2.2.2.2", 0.5, "")
+
+	if _, ok := p.ReplaceWorst("1.1.1.1", 0.01, ""); ok {
+		t.Error("已在池中的候选不应触发替换")
+	}
+
+	p.Remove("1.1.1.1") // 进冷却
+	if _, ok := p.ReplaceWorst("1.1.1.1", 0.01, ""); ok {
+		t.Error("冷却中的候选不应触发替换")
+	}
+}
+
 func TestCompareEvictionThresholds(t *testing.T) {
 	base := Node{AvgLatency: 0.2, LossRate: 0}
 
