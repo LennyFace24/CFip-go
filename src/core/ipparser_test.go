@@ -3,6 +3,7 @@ package core
 import (
 	"net/netip"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -102,16 +103,23 @@ func TestParseMixed(t *testing.T) {
 	}
 }
 
-// 6. 解析 ip.txt 文件(集成): 至少能解析出 IP
+// 6. 解析 ip.txt 文件(集成): 覆盖「读文件 → 解析」路径
+// 本用例写的文件放在 t.TempDir(), 因此不依赖仓库根目录那份未入库的 ip.txt
 func TestParseIPFile(t *testing.T) {
-	ips, err := parseIPFile("../../ip.txt")
+	path := filepath.Join(t.TempDir(), "ip.txt")
+	content := "1.1.1.1\n104.16.0.0/13=10\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ips, err := parseIPFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ips) == 0 {
-		t.Fatal("ip.txt 未解析出任何 IP")
+	// 1 个单 IP + 10 个采样
+	if len(ips) != 11 {
+		t.Fatalf("期望 11 个, 实际 %d", len(ips))
 	}
-	t.Logf("ip.txt 解析出 %d 个 IP", len(ips))
 }
 
 // 7. hasSampleCount: 有 = 返回 true, 无 = 返回 false
