@@ -12,6 +12,8 @@ cmd/app/bin
 # 前端构建产物与依赖
 cmd/app/frontend/dist
 cmd/app/frontend/node_modules
+# 生成的绑定：构建时由 task generate:bindings 产出，不入库
+cmd/app/frontend/bindings
 # 各平台打包中间产物
 cmd/app/build/linux/appimage/build
 cmd/app/build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
